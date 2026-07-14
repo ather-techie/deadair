@@ -1,0 +1,14 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Env files
+.env
+.env.*
+
+# Redis dump (created by local/dockerized redis-server in the repo root)
+dump.rdb

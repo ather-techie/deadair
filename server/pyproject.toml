@@ -1,0 +1,36 @@
+[project]
+name = "deadair"
+version = "0.1.0"
+description = "Automated video-editing pipeline: transcription, silence/filler detection, EDL, render"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6,<3",
+    "pydantic-settings>=2.2,<3",
+    "fastapi>=0.110,<1",
+    "uvicorn[standard]>=0.29,<1",
+    "python-multipart>=0.0.9",
+    "faster-whisper>=1.0,<2",
+    "rq>=1.16,<2",
+    "redis>=5.0,<6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "hypothesis>=6.98",
+    "httpx>=0.27",
+    "fakeredis>=2.21",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = ["slow: requires ffmpeg/faster-whisper/redis and real media fixtures"]
+addopts = "-m 'not slow'"

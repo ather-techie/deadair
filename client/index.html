@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>deadair — upload</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>deadair</h1>
+    <form id="upload-form">
+      <label for="video">Video file</label>
+      <input type="file" id="video" name="video" accept="video/*" required>
+      <button type="submit">Upload</button>
+    </form>
+    <p id="status"></p>
+    <ul id="progress"></ul>
+    <button id="cancel-btn" type="button" hidden>Cancel job</button>
+    <div id="result"></div>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
