@@ -29,6 +29,7 @@ const resultDiv = document.getElementById("result");
 const originalPreviewDiv = document.getElementById("original-preview");
 const transcriptDiv = document.getElementById("transcript");
 const cancelBtn = document.getElementById("cancel-btn");
+const resetBtn = document.getElementById("reset-btn");
 const removeSilenceCheckbox = document.getElementById("remove-silence");
 const removeFillerCheckbox = document.getElementById("remove-filler");
 const showTranscriptCheckbox = document.getElementById("show-transcript");
@@ -124,6 +125,35 @@ cancelBtn.addEventListener("click", async () => {
   } finally {
     cancelBtn.disabled = false;
   }
+});
+
+resetBtn.addEventListener("click", () => {
+  if (currentJobId) {
+    fetch(`/api/jobs/${currentJobId}/cancel`, { method: "POST" }).catch((err) => {
+      console.error("Cancel on reset failed:", err);
+    });
+  }
+  stopPolling();
+  stopTranscriptPolling();
+  currentJobId = null;
+  pollFailures = 0;
+  transcriptPollFailures = 0;
+  transcriptCursor = -1;
+  wantTranscript = false;
+
+  form.reset();
+  optionsError.hidden = true;
+  progressList.innerHTML = "";
+  resultDiv.innerHTML = "";
+  transcriptDiv.innerHTML = "";
+  transcriptDiv.hidden = true;
+  if (originalObjectUrl) {
+    URL.revokeObjectURL(originalObjectUrl);
+    originalObjectUrl = null;
+  }
+  originalPreviewDiv.innerHTML = "";
+  cancelBtn.hidden = true;
+  setStatus("");
 });
 
 function pollJob(videoId, jobId) {
