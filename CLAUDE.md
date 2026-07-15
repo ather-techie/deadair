@@ -2,6 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+See [SOLID_PRINCIPLES.md](SOLID_PRINCIPLES.md) for how this codebase's hexagonal architecture maps to
+SOLID — read it before adding new ports, adapters, or pipeline steps.
+
 ## What this is
 
 deadair is an automated video-editing pipeline: upload a video, extract audio, transcribe it, detect
@@ -11,6 +14,7 @@ silence and filler words, build an EDL (edit decision list), and render the cut.
   This is where nearly all real logic lives.
 - `client/` — a static HTML/JS upload page (`index.html`, `app.js`, `style.css`), no build step. It's a
   UI scaffold that polls `/api/jobs/{id}` and plays back `/api/videos/{id}/result`. No framework, no bundler.
+  Served directly by the FastAPI app (mounted at `/` in `app.py`) — no separate static file server needed.
 
 As of M6, every port has a real adapter and the milestone build is complete: `build_container()` wires
 `FfmpegAudioExtractor`, `FfmpegSilenceDetector`, `FasterWhisperTranscriber`, `FfmpegVideoRenderer`,
@@ -45,13 +49,14 @@ Full local run sequence (see root `README.md`):
 ```
 docker compose up -d redis                          # or a native redis-server on the same port
 cd server
-uvicorn deadair.presentation.main:app --reload       # terminal 1: API
+uvicorn deadair.presentation.main:app --reload       # terminal 1: API -- also serves the client at /
 python -m deadair.worker                             # terminal 2: worker -- required for jobs to progress
-cd ../client && python -m http.server                # terminal 3: static client
 ```
-Uploading via the client just hits `/api/videos`/`/api/jobs/...` at the same origin -- no separate
-wiring needed. Without the worker running, jobs stay `pending` forever (this is expected: M3-M5 ran
-jobs synchronously in-process via `InMemoryJobRunner`; M6 made execution genuinely async).
+`create_app()` mounts `client/` as static files at `/`, so opening `http://localhost:8000/` (uvicorn's
+port) serves the upload page directly from the API process -- no separate static file server. Uploading
+via the client just hits `/api/videos`/`/api/jobs/...` at the same origin -- no separate wiring needed.
+Without the worker running, jobs stay `pending` forever (this is expected: M3-M5 ran jobs synchronously
+in-process via `InMemoryJobRunner`; M6 made execution genuinely async).
 
 **Windows note**: `rq.Worker` forks a subprocess per job (`os.fork()`), which doesn't exist on Windows,
 and its default timeout enforcement uses `SIGALRM`, which also doesn't exist on Windows. `worker.py`
@@ -128,7 +133,9 @@ application → domain; infrastructure implements application's ports):
   - `progress/in_memory_progress_reporter.py` — in-memory `ProgressReporter` fake, used by tests only now.
 - **`presentation/`** — FastAPI layer.
   - `api/app.py` — `create_app(container)` builds the `FastAPI` app, stashes the `Container` on
-    `app.state.container`, mounts `videos` and `jobs` routers, registers error handlers.
+    `app.state.container`, mounts `videos` and `jobs` routers, registers error handlers, and (if
+    `client/` exists on disk) mounts it as static files at `/` via `StaticFiles(html=True)`, so the
+    upload page is served directly by the API process at the same origin as `/api/...`.
   - `api/deps.py` — `get_container(request)` FastAPI dependency pulls the container back off app state.
   - `api/videos.py` — `POST /api/videos` (upload, hashes the file, probes metadata, creates a `Video` +
     `Job` with the MVP step subset `MVP_STEPS`, enqueues `run_pipeline_job`), `GET /api/videos`,

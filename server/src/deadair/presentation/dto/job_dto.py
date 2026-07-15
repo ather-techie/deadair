@@ -6,6 +6,7 @@ class StepStateDTO(BaseModel):
     status: str
     progress: float
     error: str | None = None
+    findings: dict[str, float] | None = None
 
 
 class JobDTO(BaseModel):

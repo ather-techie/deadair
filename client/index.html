@@ -11,12 +11,32 @@
     <form id="upload-form">
       <label for="video">Video file</label>
       <input type="file" id="video" name="video" accept="video/*" required>
+      <fieldset id="options">
+        <legend>What should we do?</legend>
+        <label><input type="checkbox" id="remove-silence" name="remove_silence" checked> Remove silence</label>
+        <label><input type="checkbox" id="remove-filler" name="remove_filler" checked> Remove filler words</label>
+        <label><input type="checkbox" id="show-transcript" name="show_transcript"> Show transcript</label>
+        <label class="option-disabled"><input type="checkbox" disabled> Generate subtitles (coming soon)</label>
+        <label class="option-disabled"><input type="checkbox" disabled> Generate chapters (coming soon)</label>
+      </fieldset>
+      <p id="options-error" class="error" hidden>Select at least one option.</p>
       <button type="submit">Upload</button>
     </form>
     <p id="status"></p>
     <ul id="progress"></ul>
     <button id="cancel-btn" type="button" hidden>Cancel job</button>
-    <div id="result"></div>
+    <div id="video-compare">
+      <div class="video-pane">
+        <h3>Original</h3>
+        <div id="original-preview"></div>
+      </div>
+      <div class="video-pane">
+        <h3>Result</h3>
+        <div id="result"></div>
+      </div>
+    </div>
+    <div id="transcript" hidden></div>
+    <footer id="storage-info" hidden></footer>
   </main>
   <script src="app.js"></script>
 </body>

@@ -41,13 +41,22 @@ def test_skipped_cached_counts_as_done():
     assert job.status == JobStatus.DONE
 
 
-def test_any_failed_step_makes_job_failed():
+def test_a_failed_step_keeps_job_running_while_others_are_still_pending():
     job = _all_pending_job()
     job = job.with_step_updated(PipelineStep.EXTRACT_AUDIO, status=StepStatus.DONE)
     job = job.with_step_updated(PipelineStep.TRANSCRIBE, status=StepStatus.FAILED, error="boom", retryable=True)
-    assert job.status == JobStatus.FAILED
+    assert job.status == JobStatus.RUNNING
     assert job.step_state(PipelineStep.TRANSCRIBE).error == "boom"
     assert job.step_state(PipelineStep.TRANSCRIBE).retryable is True
+
+
+def test_job_becomes_failed_only_once_every_step_has_settled():
+    job = _all_pending_job()
+    job = job.with_step_updated(PipelineStep.TRANSCRIBE, status=StepStatus.FAILED, error="boom")
+    for step in PipelineStep:
+        if step is not PipelineStep.TRANSCRIBE:
+            job = job.with_step_updated(step, status=StepStatus.DONE)
+    assert job.status == JobStatus.FAILED
 
 
 @pytest.mark.parametrize("terminal_status", [JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED])
@@ -78,3 +87,11 @@ def test_step_state_returns_correct_step():
     job = _all_pending_job()
     state = job.step_state(PipelineStep.RENDER)
     assert state.step == PipelineStep.RENDER
+
+
+def test_with_step_updated_carries_findings():
+    job = _all_pending_job()
+    job = job.with_step_updated(
+        PipelineStep.DETECT_SILENCE, status=StepStatus.DONE, findings={"cuts": 3, "seconds_removed": 4.5}
+    )
+    assert job.step_state(PipelineStep.DETECT_SILENCE).findings == {"cuts": 3, "seconds_removed": 4.5}

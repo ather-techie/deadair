@@ -4,10 +4,12 @@ __pycache__/
 .pytest_cache/
 .hypothesis/
 data/
+log/
 .env
 .venv/
 venv/
 *.rdb
+*.log
 .coverage
 htmlcov/
 build/

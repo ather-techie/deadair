@@ -35,18 +35,21 @@ class StepState:
     finished_at: datetime | None = None
     error: str | None = None
     retryable: bool | None = None
+    findings: dict[str, float] | None = None
 
 
 _TERMINAL = (JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED)
 
 
+_STEP_TERMINAL = (StepStatus.DONE, StepStatus.SKIPPED_CACHED, StepStatus.FAILED)
+
+
 def _derive_status(steps: tuple[StepState, ...]) -> JobStatus:
     statuses = {s.status for s in steps}
-    if StepStatus.FAILED in statuses:
-        return JobStatus.FAILED
-    if statuses <= {StepStatus.DONE, StepStatus.SKIPPED_CACHED}:
-        return JobStatus.DONE
-    if statuses & {StepStatus.RUNNING, StepStatus.DONE, StepStatus.SKIPPED_CACHED}:
+    if statuses <= set(_STEP_TERMINAL):
+        # every step has settled -- the job itself can now become terminal
+        return JobStatus.FAILED if StepStatus.FAILED in statuses else JobStatus.DONE
+    if statuses & {StepStatus.RUNNING, StepStatus.DONE, StepStatus.SKIPPED_CACHED, StepStatus.FAILED}:
         return JobStatus.RUNNING
     return JobStatus.PENDING
 
@@ -84,6 +87,7 @@ class Job:
         finished_at: datetime | None = None,
         error: str | None = None,
         retryable: bool | None = None,
+        findings: dict[str, float] | None = None,
     ) -> "Job":
         if self.status in _TERMINAL:
             raise InvalidJobTransitionError(f"job {self.id} is terminal ({self.status})")
@@ -95,6 +99,7 @@ class Job:
                 finished_at=finished_at or s.finished_at,
                 error=error,
                 retryable=retryable,
+                findings=findings,
             )
             if s.step == step
             else s

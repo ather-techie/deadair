@@ -9,6 +9,7 @@ from deadair.application.ports.job_runner import JobRunner
 from deadair.application.ports.progress_reporter import ProgressReporter
 from deadair.application.ports.silence_detector import SilenceDetector
 from deadair.application.ports.transcriber import Transcriber
+from deadair.application.ports.transcript_segment_sink import TranscriptSegmentSink
 from deadair.application.ports.video_renderer import VideoRenderer
 from deadair.application.ports.video_repository import VideoRepository
 from deadair.config import Settings, load_settings
@@ -21,6 +22,7 @@ from deadair.infrastructure.persistence.local_disk.artifact_repository_disk impo
 from deadair.infrastructure.persistence.sqlite.connection import create_connection
 from deadair.infrastructure.persistence.sqlite.job_repository_sqlite import SqliteJobRepository
 from deadair.infrastructure.persistence.sqlite.progress_reporter_sqlite import SqliteProgressReporter
+from deadair.infrastructure.persistence.sqlite.transcript_segment_sink_sqlite import SqliteTranscriptSegmentSink
 from deadair.infrastructure.persistence.sqlite.video_repository_sqlite import SqliteVideoRepository
 
 
@@ -32,6 +34,7 @@ class Container:
     video_repository: VideoRepository
     artifact_repository: ArtifactRepository
     progress_reporter: ProgressReporter
+    transcript_segment_sink: TranscriptSegmentSink
     audio_extractor: AudioExtractor
     transcriber: Transcriber
     silence_detector: SilenceDetector
@@ -51,10 +54,11 @@ def build_container(settings: Settings | None = None) -> Container:
         job_repository=SqliteJobRepository(conn),
         job_runner=RQJobRunner(redis_connection, settings.rq_queue_name),
         video_repository=SqliteVideoRepository(conn),
-        artifact_repository=DiskArtifactRepository(settings.data_dir / "artifacts"),
+        artifact_repository=DiskArtifactRepository(settings.resolved_artifacts_dir()),
         progress_reporter=SqliteProgressReporter(conn),
-        audio_extractor=FfmpegAudioExtractor(settings.ffmpeg_binary_path, settings.data_dir / "audio"),
+        transcript_segment_sink=SqliteTranscriptSegmentSink(conn),
+        audio_extractor=FfmpegAudioExtractor(settings.ffmpeg_binary_path, settings.resolved_audio_dir()),
         transcriber=FasterWhisperTranscriber(settings.whisper_device, settings.whisper_compute_type),
         silence_detector=FfmpegSilenceDetector(settings.ffmpeg_binary_path),
-        video_renderer=FfmpegVideoRenderer(settings.ffmpeg_binary_path, settings.data_dir / "render_work"),
+        video_renderer=FfmpegVideoRenderer(settings.ffmpeg_binary_path, settings.resolved_render_work_dir()),
     )

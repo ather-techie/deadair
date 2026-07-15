@@ -17,13 +17,16 @@ class FakeTranscriber(Transcriber):
         video_id: VideoId,
         config: TranscribeConfig,
         on_progress: Callable[[float], None] | None = None,
+        on_segment: Callable[[Segment], None] | None = None,
     ) -> Transcript:
-        if on_progress:
-            on_progress(1.0)
         words = (
             Word(text="um", start=0.0, end=0.4, confidence=0.9),
             Word(text="hello", start=0.4, end=0.9, confidence=0.98),
             Word(text="world", start=0.9, end=1.3, confidence=0.97),
         )
         segment = Segment(words=words, start=0.0, end=1.3, text="um hello world")
+        if on_segment:
+            on_segment(segment)
+        if on_progress:
+            on_progress(1.0)
         return Transcript(video_id=video_id, segments=(segment,), language=config.language or "en")

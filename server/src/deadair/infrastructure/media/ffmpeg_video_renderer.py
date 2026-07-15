@@ -16,6 +16,9 @@ class FfmpegVideoRenderer(VideoRenderer):
     -c copy segment cuts) avoids keyframe-boundary snapping, which would
     otherwise clip audio/video near each cut's edges."""
 
+    _MIN_SEGMENT_TIMEOUT_SECONDS = 300.0
+    _SEGMENT_TIMEOUT_MULTIPLIER = 10.0
+
     def __init__(self, ffmpeg_binary_path: Path, work_dir: Path):
         self._ffmpeg_binary_path = Path(ffmpeg_binary_path)
         self._work_dir = Path(work_dir)
@@ -44,6 +47,10 @@ class FfmpegVideoRenderer(VideoRenderer):
         segments = []
         for i, keep in enumerate(edl.keep_ranges):
             segment_path = job_dir / f"segment_{i:04d}.mp4"
+            timeout = max(
+                self._MIN_SEGMENT_TIMEOUT_SECONDS,
+                keep.duration * self._SEGMENT_TIMEOUT_MULTIPLIER,
+            )
             run_ffmpeg(
                 self._ffmpeg_binary_path,
                 [
@@ -62,6 +69,7 @@ class FfmpegVideoRenderer(VideoRenderer):
                     str(config.crf),
                     str(segment_path),
                 ],
+                timeout=timeout,
             )
             segments.append(segment_path)
         return segments

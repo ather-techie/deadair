@@ -1,8 +1,8 @@
 import io
 
 from deadair.domain.entities.job import Job, JobStatus
+from deadair.domain.pipeline.step import PipelineStep
 from deadair.domain.value_objects.ids import VideoId
-from deadair.presentation.api.videos import MVP_STEPS
 
 
 def test_get_job_not_found_returns_404(client):
@@ -11,7 +11,7 @@ def test_get_job_not_found_returns_404(client):
 
 
 def test_cancel_pending_job_marks_it_cancelled(client, container):
-    job = Job.create(VideoId.new(), steps=MVP_STEPS)
+    job = Job.create(VideoId.new(), steps=tuple(PipelineStep))
     container.job_repository.add(job)
 
     response = client.post(f"/api/jobs/{job.id.value}/cancel")
@@ -21,7 +21,11 @@ def test_cancel_pending_job_marks_it_cancelled(client, container):
 
 
 def test_cancel_terminal_job_returns_409(client):
-    upload = client.post("/api/videos", files={"video": ("clip.mp4", io.BytesIO(b"data"), "video/mp4")})
+    upload = client.post(
+        "/api/videos",
+        files={"video": ("clip.mp4", io.BytesIO(b"data"), "video/mp4")},
+        data={"remove_silence": "true", "remove_filler": "true"},
+    )
     job_id = upload.json()["job_id"]
 
     response = client.post(f"/api/jobs/{job_id}/cancel")

@@ -21,6 +21,7 @@ def job_to_dto(job: Job, progress_reporter: ProgressReporter) -> JobDTO:
                 status=step_state.status.value,
                 progress=progress,
                 error=step_state.error,
+                findings=step_state.findings,
             )
         )
     return JobDTO(job_id=job.id.value, video_id=job.video_id.value, status=job.status.value, steps=steps)

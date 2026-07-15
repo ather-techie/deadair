@@ -14,6 +14,7 @@ from deadair.infrastructure.persistence.in_memory.artifact_repository_memory imp
 from deadair.infrastructure.persistence.in_memory.job_repository_memory import InMemoryJobRepository
 from deadair.infrastructure.persistence.in_memory.video_repository_memory import InMemoryVideoRepository
 from deadair.infrastructure.progress.in_memory_progress_reporter import InMemoryProgressReporter
+from deadair.infrastructure.progress.in_memory_transcript_segment_sink import InMemoryTranscriptSegmentSink
 from deadair.presentation.api.app import create_app
 
 
@@ -27,6 +28,7 @@ def container(tmp_path, monkeypatch) -> Container:
         video_repository=InMemoryVideoRepository(),
         artifact_repository=InMemoryArtifactRepository(),
         progress_reporter=InMemoryProgressReporter(),
+        transcript_segment_sink=InMemoryTranscriptSegmentSink(),
         audio_extractor=FakeAudioExtractor(tmp_path / "audio"),
         transcriber=FakeTranscriber(),
         silence_detector=FakeSilenceDetector(),

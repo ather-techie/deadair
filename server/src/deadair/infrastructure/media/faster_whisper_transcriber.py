@@ -32,6 +32,7 @@ class FasterWhisperTranscriber(Transcriber):
         video_id: VideoId,
         config: TranscribeConfig,
         on_progress: Callable[[float], None] | None = None,
+        on_segment: Callable[[Segment], None] | None = None,
     ) -> Transcript:
         try:
             model = self._get_model(config.model_name)
@@ -45,7 +46,10 @@ class FasterWhisperTranscriber(Transcriber):
                     Word(text=w.word.strip(), start=w.start, end=w.end, confidence=w.probability)
                     for w in (seg.words or [])
                 )
-                segments.append(Segment(words=words, start=seg.start, end=seg.end, text=seg.text.strip()))
+                segment = Segment(words=words, start=seg.start, end=seg.end, text=seg.text.strip())
+                segments.append(segment)
+                if on_segment:
+                    on_segment(segment)
                 if on_progress and total_duration > 0:
                     on_progress(min(seg.end / total_duration, 1.0))
         except Exception as exc:

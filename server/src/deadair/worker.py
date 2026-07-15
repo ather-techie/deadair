@@ -14,6 +14,7 @@ from rq import SimpleWorker, Worker
 from rq.timeouts import TimerDeathPenalty
 
 from deadair.config import load_settings
+from deadair.logging_config import configure_logging
 
 
 class _WindowsSimpleWorker(SimpleWorker):
@@ -25,6 +26,7 @@ class _WindowsSimpleWorker(SimpleWorker):
 
 def main() -> None:
     settings = load_settings()
+    configure_logging(settings)
     connection = Redis.from_url(settings.redis_url)
     # rq.Worker also forks a subprocess per job via os.fork(), which doesn't
     # exist on Windows -- SimpleWorker runs jobs in-process instead, at the

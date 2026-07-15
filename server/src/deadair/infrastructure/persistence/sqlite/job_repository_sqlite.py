@@ -22,6 +22,7 @@ def _steps_to_json(steps: tuple[StepState, ...]) -> str:
                 "finished_at": s.finished_at.isoformat() if s.finished_at else None,
                 "error": s.error,
                 "retryable": s.retryable,
+                "findings": s.findings,
             }
             for s in steps
         ]
@@ -38,6 +39,7 @@ def _json_to_steps(raw: str) -> tuple[StepState, ...]:
             finished_at=datetime.fromisoformat(item["finished_at"]) if item["finished_at"] else None,
             error=item["error"],
             retryable=item["retryable"],
+            findings=item.get("findings"),
         )
         for item in items
     )

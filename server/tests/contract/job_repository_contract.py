@@ -42,6 +42,18 @@ class JobRepositoryContractTests:
         assert fetched.status == JobStatus.RUNNING
         assert fetched.step_state(PipelineStep.EXTRACT_AUDIO).status == StepStatus.RUNNING
 
+    def test_update_persists_findings(self, repo):
+        job = Job.create(VideoId.new())
+        repo.add(job)
+        updated = job.with_step_updated(
+            PipelineStep.DETECT_SILENCE,
+            status=StepStatus.DONE,
+            findings={"cuts": 3, "seconds_removed": 4.5},
+        )
+        repo.update(updated)
+        fetched = repo.get(job.id)
+        assert fetched.step_state(PipelineStep.DETECT_SILENCE).findings == {"cuts": 3, "seconds_removed": 4.5}
+
     def test_update_missing_job_raises_job_not_found(self, repo):
         job = Job.create(VideoId.new())
         with pytest.raises(JobNotFoundError):

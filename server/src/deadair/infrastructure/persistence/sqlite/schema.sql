@@ -28,3 +28,13 @@ CREATE TABLE IF NOT EXISTS progress (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (job_id, step)
 );
+
+CREATE TABLE IF NOT EXISTS transcript_segments (
+    job_id TEXT NOT NULL,
+    seg_index INTEGER NOT NULL,
+    start_time REAL NOT NULL,
+    end_time REAL NOT NULL,
+    text TEXT NOT NULL,
+    words_json TEXT NOT NULL,
+    PRIMARY KEY (job_id, seg_index)
+);
