@@ -2,41 +2,67 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>deadair — upload</title>
+  <title>DeadAir — upload</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main>
-    <h1>deadair</h1>
-    <form id="upload-form">
-      <label for="video">Video file</label>
-      <input type="file" id="video" name="video" accept="video/*" required>
-      <fieldset id="options">
-        <legend>What should we do?</legend>
-        <label><input type="checkbox" id="remove-silence" name="remove_silence" checked> Remove silence</label>
-        <label><input type="checkbox" id="remove-filler" name="remove_filler" checked> Remove filler words</label>
-        <label><input type="checkbox" id="show-transcript" name="show_transcript"> Show transcript</label>
-        <label class="option-disabled"><input type="checkbox" disabled> Generate subtitles (coming soon)</label>
-        <label class="option-disabled"><input type="checkbox" disabled> Generate chapters (coming soon)</label>
-      </fieldset>
-      <p id="options-error" class="error" hidden>Select at least one option.</p>
-      <button type="submit">Upload</button>
-    </form>
-    <p id="status"></p>
-    <ul id="progress"></ul>
-    <button id="cancel-btn" type="button" hidden>Cancel job</button>
-    <div id="video-compare">
-      <div class="video-pane">
-        <h3>Original</h3>
-        <div id="original-preview"></div>
+    <header id="app-header">
+      <div>
+        <h1>DeadAir</h1>
+        <p class="tagline">Upload a video, cut the silence and filler, get a tighter cut back.</p>
       </div>
-      <div class="video-pane">
-        <h3>Result</h3>
-        <div id="result"></div>
+      <button id="theme-toggle" type="button" aria-label="Toggle dark mode">
+        <span id="theme-toggle-icon" aria-hidden="true">&#9789;</span>
+      </button>
+    </header>
+
+    <section class="card">
+      <form id="upload-form">
+        <label for="video">Video file</label>
+        <input type="file" id="video" name="video" accept="video/*" required>
+        <fieldset id="options">
+          <legend>What should we do?</legend>
+          <label><input type="checkbox" id="remove-silence" name="remove_silence" checked> Remove silence</label>
+          <label><input type="checkbox" id="remove-filler" name="remove_filler" checked> Remove filler words</label>
+          <label><input type="checkbox" id="show-transcript" name="show_transcript"> Show transcript</label>
+          <label class="option-disabled"><input type="checkbox" disabled> Generate subtitles <span class="soon-badge">soon</span></label>
+          <label class="option-disabled"><input type="checkbox" disabled> Generate chapters <span class="soon-badge">soon</span></label>
+        </fieldset>
+        <p id="options-error" class="error" hidden>Select at least one option.</p>
+        <button type="submit" class="btn-primary">Upload</button>
+      </form>
+    </section>
+
+    <section class="card" id="progress-card">
+      <p id="status"></p>
+      <ul id="progress"></ul>
+      <button id="cancel-btn" class="btn-outline" type="button" hidden>Cancel job</button>
+    </section>
+
+    <section class="card" id="compare-card">
+      <div id="video-compare">
+        <div class="video-pane">
+          <h3>Original</h3>
+          <div id="original-preview"></div>
+        </div>
+        <div class="video-pane">
+          <h3>Result</h3>
+          <div id="result"></div>
+        </div>
       </div>
-    </div>
-    <div id="transcript" hidden></div>
-    <footer id="storage-info" hidden></footer>
+    </section>
+
+    <section class="card" id="transcript-card">
+      <div id="transcript" hidden></div>
+    </section>
+
+    <footer>
+      <details id="storage-details" hidden>
+        <summary>Storage details</summary>
+        <div id="storage-info"></div>
+      </details>
+    </footer>
   </main>
   <script src="app.js"></script>
 </body>

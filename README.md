@@ -1,4 +1,4 @@
-# deadair
+# DeadAir
 
 Automated video-editing pipeline: upload a video, extract audio, transcribe it, detect
 silence and filler words, build an EDL, and render the cut.

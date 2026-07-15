@@ -1,3 +1,11 @@
+const THEME_STORAGE_KEY = "deadair.theme";
+
+(function initTheme() {
+  const stored = localStorage.getItem(THEME_STORAGE_KEY);
+  const theme = stored || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  document.documentElement.dataset.theme = theme;
+})();
+
 const UPLOAD_URL = "/api/videos";
 const POLL_INTERVAL_MS = 1500;
 const MAX_BACKOFF_MS = 15000;
@@ -26,6 +34,9 @@ const removeFillerCheckbox = document.getElementById("remove-filler");
 const showTranscriptCheckbox = document.getElementById("show-transcript");
 const optionsError = document.getElementById("options-error");
 const storageInfoDiv = document.getElementById("storage-info");
+const storageDetails = document.getElementById("storage-details");
+const themeToggleBtn = document.getElementById("theme-toggle");
+const themeToggleIcon = document.getElementById("theme-toggle-icon");
 
 let pollTimeout = null;
 let currentJobId = null;
@@ -37,6 +48,19 @@ let transcriptPollFailures = 0;
 let transcriptCursor = -1;
 
 let originalObjectUrl = null;
+
+function syncThemeIcon() {
+  themeToggleIcon.textContent = document.documentElement.dataset.theme === "dark" ? "☀" : "☽";
+}
+
+themeToggleBtn.addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem(THEME_STORAGE_KEY, next);
+  syncThemeIcon();
+});
+
+syncThemeIcon();
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -307,7 +331,7 @@ function renderStorageInfo(paths, isCached) {
     note.textContent = "(cached, may be stale — backend unreachable)";
     storageInfoDiv.appendChild(note);
   }
-  storageInfoDiv.hidden = false;
+  storageDetails.hidden = false;
 }
 
 loadStorageInfo();
