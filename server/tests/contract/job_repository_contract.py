@@ -24,6 +24,11 @@ class JobRepositoryContractTests:
         repo.add(job)
         assert repo.get(job.id) == job
 
+    def test_add_then_get_round_trips_speed_multiplier(self, repo):
+        job = Job.create(VideoId.new(), speed_multiplier=4.0)
+        repo.add(job)
+        assert repo.get(job.id).speed_multiplier == 4.0
+
     def test_get_missing_returns_none(self, repo):
         assert repo.get(Job.create(VideoId.new()).id) is None
 

@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    steps_json TEXT NOT NULL
+    steps_json TEXT NOT NULL,
+    speed_multiplier REAL
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_video_id ON jobs(video_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);

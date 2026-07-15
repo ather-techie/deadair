@@ -3,7 +3,12 @@ import hashlib
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from deadair.application.use_cases.run_pipeline_job import get_transcript, render_output_path, run_pipeline_job
+from deadair.application.use_cases.run_pipeline_job import (
+    get_edl,
+    get_transcript,
+    render_output_path,
+    run_pipeline_job,
+)
 from deadair.container import Container
 from deadair.domain.entities.job import Job, StepStatus
 from deadair.domain.entities.video import Video
@@ -11,26 +16,34 @@ from deadair.domain.pipeline.step import PipelineStep
 from deadair.domain.value_objects.ids import VideoId
 from deadair.infrastructure.media.video_prober import probe_video
 from deadair.presentation.api.deps import get_container
-from deadair.presentation.dto.transcript_dto import PartialTranscriptDTO, TranscriptDTO
+from deadair.presentation.dto.transcript_dto import PartialTranscriptDTO, ResultTranscriptDTO, TranscriptDTO
 from deadair.presentation.dto.video_dto import UploadResponseDTO, VideoDTO
-from deadair.presentation.mappers.transcript_mapper import partial_transcript_to_dto, transcript_to_dto
+from deadair.presentation.mappers.transcript_mapper import (
+    build_result_transcript,
+    partial_transcript_to_dto,
+    transcript_to_dto,
+)
 from deadair.presentation.mappers.video_mapper import video_to_dto
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
 
 def _selected_steps(
-    *, remove_silence: bool, remove_filler: bool, show_transcript: bool = False
+    *,
+    remove_silence: bool,
+    remove_filler: bool,
+    show_original_transcript: bool = False,
+    show_result_transcript: bool = False,
 ) -> tuple[PipelineStep, ...]:
     """MVP step subset for a job, built in PipelineStep declaration order (the
     topological order STEP_DEPENDENCIES relies on). EXTRACT_AUDIO/BUILD_EDL/RENDER
     are structural and always included; DETECT_SILENCE is only included if
-    remove_silence is on; TRANSCRIBE runs if either remove_filler or
-    show_transcript is on (both need a transcript, one to cut filler words, the
-    other just to display it); DETECT_FILLER is only included if remove_filler
+    remove_silence is on; TRANSCRIBE runs if remove_filler or either transcript
+    display option is on (all need a transcript, one to cut filler words, the
+    others just to display it); DETECT_FILLER is only included if remove_filler
     is on."""
     steps = [PipelineStep.EXTRACT_AUDIO]
-    if remove_filler or show_transcript:
+    if remove_filler or show_original_transcript or show_result_transcript:
         steps.append(PipelineStep.TRANSCRIBE)
     if remove_silence:
         steps.append(PipelineStep.DETECT_SILENCE)
@@ -40,17 +53,37 @@ def _selected_steps(
     return tuple(steps)
 
 
+_ALLOWED_SPEED_MULTIPLIERS = (2.0, 4.0, 8.0)
+
+
 @router.post("", status_code=201)
 async def upload_video(
     video: UploadFile = File(...),
     remove_silence: bool = Form(...),
     remove_filler: bool = Form(...),
-    show_transcript: bool = Form(False),
+    show_original_transcript: bool = Form(False),
+    show_result_transcript: bool = Form(False),
+    speed_up_cuts: bool = Form(False),
+    speed_multiplier: float = Form(2.0),
     container: Container = Depends(get_container),
 ) -> UploadResponseDTO:
-    if not remove_silence and not remove_filler and not show_transcript:
+    if not (remove_silence or remove_filler or show_original_transcript or show_result_transcript):
         raise HTTPException(
-            status_code=400, detail="select at least one of remove_silence, remove_filler, show_transcript"
+            status_code=400,
+            detail=(
+                "select at least one of remove_silence, remove_filler, "
+                "show_original_transcript, show_result_transcript"
+            ),
+        )
+    if speed_up_cuts and not (remove_silence or remove_filler):
+        raise HTTPException(
+            status_code=400,
+            detail="speed_up_cuts requires remove_silence or remove_filler to be selected",
+        )
+    if speed_up_cuts and speed_multiplier not in _ALLOWED_SPEED_MULTIPLIERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"speed_multiplier must be one of {_ALLOWED_SPEED_MULTIPLIERS}",
         )
 
     video_id = VideoId.new()
@@ -80,8 +113,12 @@ async def upload_video(
     job = Job.create(
         video_id,
         steps=_selected_steps(
-            remove_silence=remove_silence, remove_filler=remove_filler, show_transcript=show_transcript
+            remove_silence=remove_silence,
+            remove_filler=remove_filler,
+            show_original_transcript=show_original_transcript,
+            show_result_transcript=show_result_transcript,
         ),
+        speed_multiplier=speed_multiplier if speed_up_cuts else None,
     )
     container.job_repository.add(job)
     container.job_runner.enqueue(run_pipeline_job, str(job.id))
@@ -138,6 +175,26 @@ def get_video_transcript(video_id: str, container: Container = Depends(get_conta
     if transcript is None:
         raise HTTPException(status_code=409, detail="transcript not requested or not ready yet")
     return transcript_to_dto(transcript)
+
+
+@router.get("/{video_id}/transcript/result")
+def get_video_result_transcript(video_id: str, container: Container = Depends(get_container)) -> ResultTranscriptDTO:
+    vid = VideoId(video_id)
+    if container.video_repository.get(vid) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+
+    jobs = container.job_repository.list_for_video(vid)
+    if not jobs:
+        raise HTTPException(status_code=404, detail="no job for this video")
+    latest_job = jobs[-1]
+
+    transcript = get_transcript(container, vid, latest_job)
+    if transcript is None:
+        raise HTTPException(status_code=409, detail="transcript not requested or not ready yet")
+    edl = get_edl(container, vid, latest_job)
+    if edl is None:
+        raise HTTPException(status_code=409, detail="edl not built yet")
+    return build_result_transcript(transcript, edl)
 
 
 @router.get("/{video_id}/transcript/partial")

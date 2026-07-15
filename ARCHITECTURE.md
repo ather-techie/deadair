@@ -246,9 +246,10 @@ into production; tests use the fakes/in-memory ones directly.
   `WhisperModel` per adapter instance, keyed by per-job `model_name` (device/compute_type come
   from `Settings`); reports fractional progress via `on_progress`; wraps failures in
   `TranscriptionError`.
-- `media/ffmpeg_video_renderer.py` — real `VideoRenderer`; re-encodes each keep-range as its own
-  segment, then concatenates via ffmpeg's concat demuxer; skips concat entirely for single-range
-  EDLs; raises `RenderError` on empty `keep_ranges`.
+- `media/ffmpeg_video_renderer.py` — real `VideoRenderer`; re-encodes each EDL segment as its own
+  output segment (applying `setpts`/`atempo` filters for segments with `rate != 1.0`, i.e. sped-up-
+  instead-of-cut ranges), then concatenates via ffmpeg's concat demuxer; skips concat entirely for
+  single-segment EDLs; raises `RenderError` on empty `segments`.
 - `jobs/in_memory_job_runner.py` — synchronous, in-process `JobRunner` fake, test-only.
 - `jobs/rq_job_runner.py` — real `JobRunner`; takes an already-constructed Redis connection
   (testable against `fakeredis`); sets a generous 1-hour `job_timeout` on every enqueue.

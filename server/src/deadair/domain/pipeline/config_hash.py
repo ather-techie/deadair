@@ -8,6 +8,7 @@ from typing import Any
 from deadair.domain.pipeline.step import STEP_DEPENDENCIES, PipelineStep
 
 STEP_ALGO_VERSION: dict[PipelineStep, str] = {s: "v1" for s in PipelineStep}
+STEP_ALGO_VERSION[PipelineStep.BUILD_EDL] = "v2"  # keep_ranges -> rate-aware segments
 # Bump a step's entry here when its internal algorithm changes in a way that
 # affects output determinism but isn't captured by a config field (e.g. a
 # rewritten silence-merge algorithm) — this forces a hash change without a

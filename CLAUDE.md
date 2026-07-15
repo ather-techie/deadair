@@ -95,7 +95,11 @@ application → domain; infrastructure implements application's ports):
     it computes the config hash, checks `ArtifactRepository` for a cached result (`SKIPPED_CACHED`), and
     otherwise calls the matching port method, serializes the result, and stores it before moving to the
     next step. Step failures caught from `_PORT_ERRORS` mark the step `FAILED` and stop the job; steps not
-    yet implemented in `_STEP_CONFIGS` (e.g. `CHAPTERS`, `SUBTITLES`) are skipped as out-of-scope for v1.
+    yet implemented in `_step_configs_for(job)`'s returned dict (e.g. `CHAPTERS`, `SUBTITLES`) are skipped
+    as out-of-scope for v1. `_step_configs_for(job)` builds per-job step configs (currently only
+    `BuildEdlConfig.speed_multiplier`, sourced from `Job.speed_multiplier`, varies per job -- everything
+    else is still a default-constructed dataclass) rather than a shared static dict, since the worker
+    process only has `job_id` to rebuild config from.
 - **`infrastructure/`** — concrete adapters for the ports above.
   - `persistence/in_memory/` — dict-backed repos, used in tests.
   - `persistence/sqlite/` — real `JobRepository`/`VideoRepository` backed by sqlite (schema in
@@ -120,11 +124,12 @@ application → domain; infrastructure implements application's ports):
     `TranscribeConfig.model_name` (per-job) while `device`/`compute_type` come from `Settings`
     (deployment-level hardware config, not per-job). Reports fractional progress via `on_progress` as each
     Whisper segment completes (`seg.end / info.duration`). Wraps any failure in `TranscriptionError`.
-  - `media/ffmpeg_video_renderer.py` — real `VideoRenderer`. Re-encodes each `edl.keep_ranges` entry as its
+  - `media/ffmpeg_video_renderer.py` — real `VideoRenderer`. Re-encodes each `edl.segments` entry as its
     own segment (input-side `-ss`/`-to`, frame-accurate even under re-encode, avoiding the keyframe-
-    snapping that `-c copy` segment cuts would cause), then concatenates via ffmpeg's concat demuxer
-    (`-c copy`, safe since every segment shares the same just-applied codec/CRF). Single-keep-range EDLs
-    skip the concat step entirely. Raises `RenderError` if `edl.keep_ranges` is empty.
+    snapping that `-c copy` segment cuts would cause), applying `setpts`/`atempo` filters when a segment's
+    `rate != 1.0` (a range sped up instead of cut), then concatenates via ffmpeg's concat demuxer
+    (`-c copy`, safe since every segment shares the same just-applied codec/CRF). Single-segment EDLs
+    skip the concat step entirely. Raises `RenderError` if `edl.segments` is empty.
   - `jobs/in_memory_job_runner.py` — synchronous, in-process `JobRunner` fake, used by tests only now.
   - `jobs/rq_job_runner.py` — real `JobRunner`. Takes an already-constructed Redis connection (not a URL),
     so it's trivially testable against `fakeredis` without a real Redis server. Sets `job_timeout` to a

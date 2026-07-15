@@ -53,6 +53,7 @@ def _row_to_job(row: sqlite3.Row) -> Job:
         steps=_json_to_steps(row["steps_json"]),
         created_at=datetime.fromisoformat(row["created_at"]),
         updated_at=datetime.fromisoformat(row["updated_at"]),
+        speed_multiplier=row["speed_multiplier"],
     )
 
 
@@ -63,8 +64,8 @@ class SqliteJobRepository(JobRepository):
     def add(self, job: Job) -> None:
         try:
             self._conn.execute(
-                "INSERT INTO jobs (id, video_id, status, created_at, updated_at, steps_json) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO jobs (id, video_id, status, created_at, updated_at, steps_json, speed_multiplier) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     job.id.value,
                     job.video_id.value,
@@ -72,6 +73,7 @@ class SqliteJobRepository(JobRepository):
                     job.created_at.isoformat(),
                     job.updated_at.isoformat(),
                     _steps_to_json(job.steps),
+                    job.speed_multiplier,
                 ),
             )
             self._conn.commit()

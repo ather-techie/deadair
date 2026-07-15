@@ -25,17 +25,29 @@
           <legend>What should we do?</legend>
           <label><input type="checkbox" id="remove-silence" name="remove_silence" checked> Remove silence</label>
           <label><input type="checkbox" id="remove-filler" name="remove_filler" checked> Remove filler words</label>
-          <label><input type="checkbox" id="show-transcript" name="show_transcript"> Show transcript</label>
+          <label><input type="checkbox" id="speed-up-cuts" name="speed_up_cuts"> Speed up instead of cut
+            <select id="speed-multiplier" name="speed_multiplier">
+              <option value="2">2x</option>
+              <option value="4" selected>4x</option>
+              <option value="8">8x</option>
+            </select>
+          </label>
+          <label><input type="checkbox" id="show-original-transcript" name="show_original_transcript"> Show original transcript</label>
+          <label><input type="checkbox" id="show-result-transcript" name="show_result_transcript"> Show result transcript</label>
           <label class="option-disabled"><input type="checkbox" disabled> Generate subtitles <span class="soon-badge">soon</span></label>
           <label class="option-disabled"><input type="checkbox" disabled> Generate chapters <span class="soon-badge">soon</span></label>
         </fieldset>
         <p id="options-error" class="error" hidden>Select at least one option.</p>
-        <button type="submit" class="btn-primary">Upload</button>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Upload</button>
+          <button id="reset-btn" class="btn-outline" type="button">Reset</button>
+        </div>
       </form>
     </section>
 
     <section class="card" id="progress-card">
       <p id="status"></p>
+      <p id="total-time"></p>
       <ul id="progress"></ul>
       <button id="cancel-btn" class="btn-outline" type="button" hidden>Cancel job</button>
     </section>
@@ -54,7 +66,20 @@
     </section>
 
     <section class="card" id="transcript-card">
-      <div id="transcript" hidden></div>
+      <div id="original-transcript-content" class="transcript-block" hidden>
+        <div class="transcript-header">
+          <h3>Original transcript</h3>
+          <span class="transcript-badge">Original audio — before cuts</span>
+        </div>
+        <div id="original-transcript"></div>
+      </div>
+      <div id="result-transcript-content" class="transcript-block" hidden>
+        <div class="transcript-header">
+          <h3>Result transcript</h3>
+          <span class="transcript-badge">After cuts — original time → result time</span>
+        </div>
+        <div id="result-transcript"></div>
+      </div>
     </section>
 
     <footer>

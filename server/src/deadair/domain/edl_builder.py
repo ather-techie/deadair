@@ -1,15 +1,19 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from deadair.domain.entities.edl import EDL
+from deadair.domain.entities.edl import EDL, EdlSegment
 from deadair.domain.value_objects.ids import VideoId
-from deadair.domain.value_objects.time_range import TimeRange
+from deadair.domain.value_objects.time_range import TimeRange, complement
 
 
 @dataclass(frozen=True, slots=True)
 class BuildEdlConfig:
     padding_seconds: float = 0.15
     min_keep_duration: float = 0.3
+    speed_multiplier: float | None = None
+    """When set, cut ranges are retained and sped up by this factor instead
+    of being removed entirely. None (default) reproduces the plain hard-cut
+    behavior."""
 
 
 def merge_overlapping(ranges: Sequence[TimeRange]) -> list[TimeRange]:
@@ -34,20 +38,6 @@ def _pad_cut(c: TimeRange, padding: float) -> TimeRange | None:
     return TimeRange(new_start, new_end) if new_end > new_start else None
 
 
-def _complement(cuts: Sequence[TimeRange], total: float) -> list[TimeRange]:
-    cuts_sorted = sorted(cuts, key=lambda r: r.start)
-    keep: list[TimeRange] = []
-    cursor = 0.0
-    for c in cuts_sorted:
-        c_start, c_end = max(0.0, min(c.start, total)), max(0.0, min(c.end, total))
-        if c_start > cursor:
-            keep.append(TimeRange(cursor, c_start))
-        cursor = max(cursor, c_end)
-    if cursor < total:
-        keep.append(TimeRange(cursor, total))
-    return keep
-
-
 def build_edl(
     video_id: VideoId,
     video_duration: float,
@@ -63,15 +53,42 @@ def build_edl(
        [0, video_duration].
     4. Drop any keep range shorter than min_keep_duration — dropping it (not
        "merging" it) is sufficient because EDL.cut_ranges() is *always*
-       derived as the complement of keep_ranges, so a dropped keep range
-       automatically becomes part of a cut with no separate merge logic.
-    5. Construct EDL — its __post_init__ enforces sorted/non-overlapping/
-       in-bounds keep_ranges, which combined with the complement-derivation of
-       cut_ranges() guarantees the "no gaps, no overlaps, full partition"
+       derived as the complement of the segments' ranges, so a dropped keep
+       range automatically becomes part of a cut with no separate merge logic.
+    5. If config.speed_multiplier is set, the gaps between kept ranges (what
+       would otherwise be pure cuts) are retained as segments played back at
+       that rate instead of being dropped.
+    6. Construct EDL — its __post_init__ enforces sorted/non-overlapping/
+       in-bounds segment ranges, which combined with the complement-derivation
+       of cut_ranges() guarantees the "no gaps, no overlaps, full partition"
        property by construction.
     """
     merged_cuts = merge_overlapping(list(silence_cut_ranges) + list(filler_cut_ranges))
     padded_cuts = [pc for c in merged_cuts if (pc := _pad_cut(c, config.padding_seconds)) is not None]
-    keep = _complement(padded_cuts, video_duration)
+    keep = complement(padded_cuts, video_duration)
     keep = [k for k in keep if k.duration >= config.min_keep_duration]
-    return EDL(video_id=video_id, keep_ranges=tuple(keep), total_duration=video_duration)
+
+    segments = [EdlSegment(range=k, rate=1.0) for k in keep]
+    if config.speed_multiplier is not None:
+        gaps = complement(keep, video_duration)
+        segments += [EdlSegment(range=g, rate=config.speed_multiplier) for g in gaps if g.duration > 0]
+        segments.sort(key=lambda s: s.range.start)
+
+    return EDL(video_id=video_id, segments=tuple(segments), total_duration=video_duration)
+
+
+def map_to_result_time(t: float, segments: Sequence[EdlSegment]) -> float:
+    """Maps a timestamp on the original timeline to where it lands on the
+    trimmed-output timeline, given the EDL's segments (sorted, non-overlapping
+    by construction). A point inside a segment lands proportionally into its
+    (possibly sped-up) output duration; a point in a genuine gap (nothing
+    covers it) clamps forward to the elapsed output-duration at that point."""
+    elapsed = 0.0
+    for seg in segments:
+        r = seg.range
+        if t <= r.start:
+            return elapsed
+        if t < r.end:
+            return elapsed + (t - r.start) / seg.rate
+        elapsed += r.duration / seg.rate
+    return elapsed

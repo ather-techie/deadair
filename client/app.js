@@ -24,14 +24,22 @@ const STORAGE_PATH_LABELS = {
 
 const form = document.getElementById("upload-form");
 const status = document.getElementById("status");
+const totalTimeEl = document.getElementById("total-time");
 const progressList = document.getElementById("progress");
 const resultDiv = document.getElementById("result");
 const originalPreviewDiv = document.getElementById("original-preview");
-const transcriptDiv = document.getElementById("transcript");
+const originalTranscriptDiv = document.getElementById("original-transcript");
+const originalTranscriptContentDiv = document.getElementById("original-transcript-content");
+const resultTranscriptDiv = document.getElementById("result-transcript");
+const resultTranscriptContentDiv = document.getElementById("result-transcript-content");
 const cancelBtn = document.getElementById("cancel-btn");
+const resetBtn = document.getElementById("reset-btn");
 const removeSilenceCheckbox = document.getElementById("remove-silence");
 const removeFillerCheckbox = document.getElementById("remove-filler");
-const showTranscriptCheckbox = document.getElementById("show-transcript");
+const speedUpCutsCheckbox = document.getElementById("speed-up-cuts");
+const speedMultiplierSelect = document.getElementById("speed-multiplier");
+const showOriginalTranscriptCheckbox = document.getElementById("show-original-transcript");
+const showResultTranscriptCheckbox = document.getElementById("show-result-transcript");
 const optionsError = document.getElementById("options-error");
 const storageInfoDiv = document.getElementById("storage-info");
 const storageDetails = document.getElementById("storage-details");
@@ -41,7 +49,9 @@ const themeToggleIcon = document.getElementById("theme-toggle-icon");
 let pollTimeout = null;
 let currentJobId = null;
 let pollFailures = 0;
-let wantTranscript = false;
+let wantOriginalTranscript = false;
+let wantResultTranscript = false;
+let resultTranscriptFetched = false;
 
 let transcriptPollTimeout = null;
 let transcriptPollFailures = 0;
@@ -70,23 +80,41 @@ form.addEventListener("submit", async (event) => {
 
   const removeSilence = removeSilenceCheckbox.checked;
   const removeFiller = removeFillerCheckbox.checked;
-  const showTranscript = showTranscriptCheckbox.checked;
-  optionsError.hidden = removeSilence || removeFiller || showTranscript;
-  if (!removeSilence && !removeFiller && !showTranscript) return;
+  const speedUpCuts = speedUpCutsCheckbox.checked;
+  const speedMultiplier = speedMultiplierSelect.value;
+  const showOriginalTranscript = showOriginalTranscriptCheckbox.checked;
+  const showResultTranscript = showResultTranscriptCheckbox.checked;
+  const anyOptionSelected = removeSilence || removeFiller || showOriginalTranscript || showResultTranscript;
+  optionsError.textContent = "Select at least one option.";
+  optionsError.hidden = anyOptionSelected;
+  if (!anyOptionSelected) return;
+  if (speedUpCuts && !(removeSilence || removeFiller)) {
+    optionsError.textContent = "Speed up instead of cut requires remove silence or remove filler words.";
+    optionsError.hidden = false;
+    return;
+  }
 
   const body = new FormData();
   body.append("video", file);
   body.append("remove_silence", removeSilence);
   body.append("remove_filler", removeFiller);
-  body.append("show_transcript", showTranscript);
+  body.append("speed_up_cuts", speedUpCuts);
+  body.append("speed_multiplier", speedMultiplier);
+  body.append("show_original_transcript", showOriginalTranscript);
+  body.append("show_result_transcript", showResultTranscript);
 
-  wantTranscript = showTranscript;
+  wantOriginalTranscript = showOriginalTranscript;
+  wantResultTranscript = showResultTranscript;
+  resultTranscriptFetched = false;
   stopPolling();
   stopTranscriptPolling();
   progressList.innerHTML = "";
+  totalTimeEl.textContent = "";
   resultDiv.innerHTML = "";
-  transcriptDiv.innerHTML = "";
-  transcriptDiv.hidden = true;
+  originalTranscriptDiv.innerHTML = "";
+  originalTranscriptContentDiv.hidden = true;
+  resultTranscriptDiv.innerHTML = "";
+  resultTranscriptContentDiv.hidden = true;
   cancelBtn.hidden = true;
   showOriginalPreview(file);
   setStatus(`Uploading ${file.name}...`);
@@ -100,7 +128,7 @@ form.addEventListener("submit", async (event) => {
     cancelBtn.hidden = false;
     pollFailures = 0;
     pollJob(videoId, jobId);
-    if (wantTranscript) {
+    if (wantOriginalTranscript) {
       transcriptCursor = -1;
       transcriptPollFailures = 0;
       pollTranscript(videoId);
@@ -126,6 +154,40 @@ cancelBtn.addEventListener("click", async () => {
   }
 });
 
+resetBtn.addEventListener("click", () => {
+  if (currentJobId) {
+    fetch(`/api/jobs/${currentJobId}/cancel`, { method: "POST" }).catch((err) => {
+      console.error("Cancel on reset failed:", err);
+    });
+  }
+  stopPolling();
+  stopTranscriptPolling();
+  currentJobId = null;
+  pollFailures = 0;
+  transcriptPollFailures = 0;
+  transcriptCursor = -1;
+  wantOriginalTranscript = false;
+  wantResultTranscript = false;
+  resultTranscriptFetched = false;
+
+  form.reset();
+  optionsError.hidden = true;
+  progressList.innerHTML = "";
+  totalTimeEl.textContent = "";
+  resultDiv.innerHTML = "";
+  originalTranscriptDiv.innerHTML = "";
+  originalTranscriptContentDiv.hidden = true;
+  resultTranscriptDiv.innerHTML = "";
+  resultTranscriptContentDiv.hidden = true;
+  if (originalObjectUrl) {
+    URL.revokeObjectURL(originalObjectUrl);
+    originalObjectUrl = null;
+  }
+  originalPreviewDiv.innerHTML = "";
+  cancelBtn.hidden = true;
+  setStatus("");
+});
+
 function pollJob(videoId, jobId) {
   pollTimeout = setTimeout(async () => {
     try {
@@ -137,6 +199,7 @@ function pollJob(videoId, jobId) {
       // Checked every tick (not just once the whole job is "done") so a
       // render that finishes before some other step fails still shows up.
       maybeShowResult(videoId, job);
+      maybeShowResultTranscript(videoId, job);
 
       if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
         finishPolling();
@@ -170,6 +233,30 @@ function maybeShowResult(videoId, job) {
   }
 }
 
+// The result transcript needs the finished EDL (build_edl), which has no
+// incremental/partial form -- unlike the original transcript it's fetched
+// once, in full, rather than polled.
+function maybeShowResultTranscript(videoId, job) {
+  if (!wantResultTranscript || resultTranscriptFetched) return;
+  const buildEdlStep = job.steps.find((s) => s.step === "build_edl");
+  if (!buildEdlStep || !(buildEdlStep.status === "done" || buildEdlStep.status === "skipped_cached")) return;
+
+  resultTranscriptFetched = true;
+  fetch(`/api/videos/${videoId}/transcript/result`)
+    .then((response) => {
+      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      return response.json();
+    })
+    .then((data) => {
+      resultTranscriptContentDiv.hidden = false;
+      renderResultTranscript(data.segments);
+    })
+    .catch((err) => {
+      console.error("Result transcript fetch failed:", err);
+      resultTranscriptFetched = false;
+    });
+}
+
 function backoffDelay(failures) {
   if (failures === 0) return POLL_INTERVAL_MS;
   return Math.min(POLL_INTERVAL_MS * 2 ** failures, MAX_BACKOFF_MS);
@@ -196,6 +283,20 @@ function setStatus(message, isError = false) {
   status.classList.toggle("error", isError);
 }
 
+function formatDuration(seconds) {
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${mins}m ${String(secs).padStart(2, "0")}s`;
+}
+
+function stepDurationSeconds(step) {
+  if (!step.started_at) return null;
+  const start = new Date(step.started_at).getTime();
+  const end = step.finished_at ? new Date(step.finished_at).getTime() : Date.now();
+  return (end - start) / 1000;
+}
+
 function renderProgress(job) {
   progressList.innerHTML = "";
   for (const step of job.steps) {
@@ -216,6 +317,14 @@ function renderProgress(job) {
     bar.appendChild(fill);
     li.appendChild(bar);
 
+    const durationSeconds = stepDurationSeconds(step);
+    if (durationSeconds !== null) {
+      const durationText = document.createElement("span");
+      durationText.className = "step-duration";
+      durationText.textContent = formatDuration(durationSeconds);
+      li.appendChild(durationText);
+    }
+
     if (step.error) {
       const errorText = document.createElement("span");
       errorText.className = "step-error";
@@ -233,6 +342,13 @@ function renderProgress(job) {
 
     progressList.appendChild(li);
   }
+
+  const totalSeconds = (
+    (job.status === "done" || job.status === "failed" || job.status === "cancelled"
+      ? new Date(job.updated_at).getTime()
+      : Date.now()) - new Date(job.created_at).getTime()
+  ) / 1000;
+  totalTimeEl.textContent = `Total: ${formatDuration(totalSeconds)}`;
 }
 
 function showOriginalPreview(file) {
@@ -278,7 +394,7 @@ function pollTranscript(videoId) {
 
 function appendTranscriptSegments(segments) {
   if (!segments.length) return;
-  transcriptDiv.hidden = false;
+  originalTranscriptContentDiv.hidden = false;
   for (const segment of segments) {
     const p = document.createElement("p");
     p.className = "transcript-segment";
@@ -293,7 +409,50 @@ function appendTranscriptSegments(segments) {
     text.textContent = segment.text;
     p.appendChild(text);
 
-    transcriptDiv.appendChild(p);
+    originalTranscriptDiv.appendChild(p);
+  }
+}
+
+function renderResultTranscript(segments) {
+  resultTranscriptDiv.innerHTML = "";
+  if (!segments.length) {
+    const empty = document.createElement("p");
+    empty.className = "transcript-empty";
+    empty.textContent = "Nothing survived the cuts.";
+    resultTranscriptDiv.appendChild(empty);
+    return;
+  }
+
+  for (const segment of segments) {
+    const p = document.createElement("p");
+    p.className = "transcript-segment";
+
+    const pair = document.createElement("span");
+    pair.className = "transcript-timestamp-pair";
+
+    const originalTimestamp = document.createElement("span");
+    originalTimestamp.className = "transcript-timestamp";
+    originalTimestamp.textContent = formatTimestamp(segment.original_start);
+    pair.appendChild(originalTimestamp);
+
+    const arrow = document.createElement("span");
+    arrow.className = "transcript-timestamp-arrow";
+    arrow.textContent = "→";
+    pair.appendChild(arrow);
+
+    const resultTimestamp = document.createElement("span");
+    resultTimestamp.className = "transcript-timestamp";
+    resultTimestamp.textContent = formatTimestamp(segment.result_start);
+    pair.appendChild(resultTimestamp);
+
+    p.appendChild(pair);
+
+    const text = document.createElement("span");
+    text.className = "transcript-text";
+    text.textContent = segment.text;
+    p.appendChild(text);
+
+    resultTranscriptDiv.appendChild(p);
   }
 }
 

@@ -35,7 +35,9 @@ def test_keep_and_cut_ranges_partition_timeline_with_no_gaps_or_overlaps(duratio
         BuildEdlConfig(padding_seconds=padding, min_keep_duration=min_keep),
     )
 
-    all_ranges = sorted(list(edl.keep_ranges) + list(edl.cut_ranges()), key=lambda r: r.start)
+    all_ranges = sorted(
+        [s.range for s in edl.segments] + list(edl.cut_ranges()), key=lambda r: r.start
+    )
     cursor = 0.0
     for r in all_ranges:
         assert r.start == pytest.approx(cursor, abs=1e-6)
@@ -59,8 +61,8 @@ def test_build_edl_never_raises_and_produces_a_valid_edl(duration, data):
         BuildEdlConfig(padding_seconds=padding, min_keep_duration=min_keep),
     )
     assert edl.total_duration == duration
-    for r in edl.keep_ranges:
-        assert 0.0 <= r.start <= r.end <= duration
+    for s in edl.segments:
+        assert 0.0 <= s.range.start <= s.range.end <= duration
 
 
 @given(duration=durations, data=st.data())
@@ -78,5 +80,5 @@ def test_kept_ranges_meet_min_keep_duration_or_are_absent(duration, data):
         fillers,
         BuildEdlConfig(padding_seconds=padding, min_keep_duration=min_keep),
     )
-    for r in edl.keep_ranges:
-        assert r.duration >= min_keep - 1e-9
+    for s in edl.segments:
+        assert s.range.duration >= min_keep - 1e-9

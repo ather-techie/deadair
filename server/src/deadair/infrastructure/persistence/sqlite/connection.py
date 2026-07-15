@@ -14,5 +14,9 @@ def create_connection(db_path: str | Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(_SCHEMA_PATH.read_text())
+    try:
+        conn.execute("ALTER TABLE jobs ADD COLUMN speed_multiplier REAL")
+    except sqlite3.OperationalError:
+        pass  # column already exists on a pre-existing on-disk db
     conn.commit()
     return conn

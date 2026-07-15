@@ -20,8 +20,17 @@ def job_to_dto(job: Job, progress_reporter: ProgressReporter) -> JobDTO:
                 step=step_state.step.value,
                 status=step_state.status.value,
                 progress=progress,
+                started_at=step_state.started_at,
+                finished_at=step_state.finished_at,
                 error=step_state.error,
                 findings=step_state.findings,
             )
         )
-    return JobDTO(job_id=job.id.value, video_id=job.video_id.value, status=job.status.value, steps=steps)
+    return JobDTO(
+        job_id=job.id.value,
+        video_id=job.video_id.value,
+        status=job.status.value,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        steps=steps,
+    )

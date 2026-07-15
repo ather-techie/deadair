@@ -36,7 +36,8 @@ closure generically over whatever the dict contains. Adding a new step means add
 member to `PipelineStep` plus one entry to `STEP_DEPENDENCIES` — no existing function needs
 to change. `CHAPTERS`/`SUBTITLES` (lines 14-15) already exist as declared-but-unimplemented
 steps, skipped explicitly in `run_pipeline_job.py`'s step loop (`if step not in
-_STEP_CONFIGS: continue`) — a live example of an extension point waiting to be filled in.
+configs: continue`, where `configs = _step_configs_for(job)`) — a live example of an extension
+point waiting to be filled in.
 
 **Do:** extend `STEP_DEPENDENCIES` (and the enum, keeping declaration order topologically
 valid — asserted by `tests/unit/domain/test_step_graph.py`) for new steps.

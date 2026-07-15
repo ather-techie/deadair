@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from itertools import count
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from deadair.application.ports.transcriber import TranscriptionError
 from deadair.application.ports.video_renderer import RenderError
 from deadair.container import Container, build_container
 from deadair.domain.edl_builder import BuildEdlConfig, build_edl
-from deadair.domain.entities.edl import EDL
+from deadair.domain.entities.edl import EDL, EdlSegment
 from deadair.domain.entities.job import InvalidJobTransitionError, Job, JobStatus, StepStatus
 from deadair.domain.entities.transcript import Segment, Transcript, Word
 from deadair.domain.entities.video import Video
@@ -27,14 +28,17 @@ from deadair.domain.policies.silence_policy import SilenceDetectionConfig, filte
 from deadair.domain.value_objects.ids import JobId, VideoId
 from deadair.domain.value_objects.time_range import TimeRange
 
-_STEP_CONFIGS: dict[PipelineStep, object] = {
-    PipelineStep.EXTRACT_AUDIO: ExtractAudioConfig(),
-    PipelineStep.TRANSCRIBE: TranscribeConfig(),
-    PipelineStep.DETECT_SILENCE: SilenceDetectionConfig(),
-    PipelineStep.DETECT_FILLER: FillerWordConfig(),
-    PipelineStep.BUILD_EDL: BuildEdlConfig(),
-    PipelineStep.RENDER: RenderConfig(),
-}
+
+def _step_configs_for(job: Job) -> dict[PipelineStep, object]:
+    return {
+        PipelineStep.EXTRACT_AUDIO: ExtractAudioConfig(),
+        PipelineStep.TRANSCRIBE: TranscribeConfig(),
+        PipelineStep.DETECT_SILENCE: SilenceDetectionConfig(),
+        PipelineStep.DETECT_FILLER: FillerWordConfig(),
+        PipelineStep.BUILD_EDL: BuildEdlConfig(speed_multiplier=job.speed_multiplier),
+        PipelineStep.RENDER: RenderConfig(),
+    }
+
 
 _TERMINAL_JOB_STATUSES = (JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED)
 _PORT_ERRORS = (AudioExtractionError, TranscriptionError, SilenceDetectionError, RenderError)
@@ -97,15 +101,15 @@ def _edl_to_json(edl: EDL) -> bytes:
     return json.dumps(
         {
             "total_duration": edl.total_duration,
-            "keep_ranges": [[r.start, r.end] for r in edl.keep_ranges],
+            "segments": [[s.range.start, s.range.end, s.rate] for s in edl.segments],
         }
     ).encode("utf-8")
 
 
 def _json_to_edl(payload: bytes, video_id: VideoId) -> EDL:
     data = json.loads(payload)
-    keep_ranges = tuple(TimeRange(start, end) for start, end in data["keep_ranges"])
-    return EDL(video_id=video_id, keep_ranges=keep_ranges, total_duration=data["total_duration"])
+    segments = tuple(EdlSegment(range=TimeRange(start, end), rate=rate) for start, end, rate in data["segments"])
+    return EDL(video_id=video_id, segments=segments, total_duration=data["total_duration"])
 
 
 def _serialize(step: PipelineStep, state: _State) -> bytes:
@@ -139,8 +143,15 @@ def _apply_cached(step: PipelineStep, payload: bytes, video_id: VideoId, state: 
         state.rendered_path = Path(json.loads(payload)["output_path"])
 
 
-def _compute(step: PipelineStep, container: Container, video: Video, job_id: JobId, state: _State) -> None:
-    config = _STEP_CONFIGS[step]
+def _compute(
+    step: PipelineStep,
+    container: Container,
+    video: Video,
+    job_id: JobId,
+    state: _State,
+    configs: dict[PipelineStep, object],
+) -> None:
+    config = configs[step]
     if step is PipelineStep.EXTRACT_AUDIO:
         state.audio_path = container.audio_extractor.extract(Path(video.source_path), config)
     elif step is PipelineStep.TRANSCRIBE:
@@ -186,16 +197,17 @@ def render_output_path(renders_dir: Path, video_id: VideoId, job_id: JobId) -> P
     return renders_dir / video_id.value / f"{job_id.value}.mp4"
 
 
-def compute_step_hashes(job: Job) -> dict[PipelineStep, str]:
+def compute_step_hashes(job: Job, configs: dict[PipelineStep, object] | None = None) -> dict[PipelineStep, str]:
     """Replays the same config-hash chain _run() computes while executing the
     job, without re-running any steps. Lets read-only endpoints (e.g. fetching
     the cached transcript) rebuild an ArtifactKey for an already-completed job."""
+    configs = configs if configs is not None else _step_configs_for(job)
     hashes: dict[PipelineStep, str] = {}
     for step_state in job.steps:
         step = step_state.step
-        if step not in _STEP_CONFIGS:
+        if step not in configs:
             continue
-        own_config = _STEP_CONFIGS[step]
+        own_config = configs[step]
         upstream_hashes = {
             dep: hashes.get(dep, _SKIPPED_STEP_HASH) for dep in STEP_DEPENDENCIES[step]
         }
@@ -221,6 +233,23 @@ def get_transcript(container: Container, video_id: VideoId, job: Job) -> Transcr
     return _json_to_transcript(payload, video_id)
 
 
+def get_edl(container: Container, video_id: VideoId, job: Job) -> EDL | None:
+    """Fetches the cached BUILD_EDL artifact for a job, or None if it hasn't
+    finished yet or the artifact is missing. Mirrors get_transcript() above."""
+    try:
+        step_state = job.step_state(PipelineStep.BUILD_EDL)
+    except StopIteration:
+        return None
+    if step_state.status not in (StepStatus.DONE, StepStatus.SKIPPED_CACHED):
+        return None
+    hashes = compute_step_hashes(job)
+    key = ArtifactKey(video_id, PipelineStep.BUILD_EDL, hashes[PipelineStep.BUILD_EDL])
+    payload = container.artifact_repository.get(key)
+    if payload is None:
+        return None
+    return _json_to_edl(payload, video_id)
+
+
 def run_pipeline_job(job_id: str) -> None:
     """Top-level, dotted-path-importable entrypoint for the JobRunner. Builds
     its own Container inside the worker process -- must never be handed to
@@ -237,12 +266,13 @@ def _run(container: Container, job_id: JobId) -> None:
         return
 
     state = _State()
-    hashes = compute_step_hashes(job)
+    configs = _step_configs_for(job)
+    hashes = compute_step_hashes(job, configs)
     failed_steps: set[PipelineStep] = set()
 
     for step_state in job.steps:
         step = step_state.step
-        if step not in _STEP_CONFIGS:
+        if step not in configs:
             continue  # CHAPTERS/SUBTITLES etc. -- out of scope for v1
 
         blocking_deps = STEP_DEPENDENCIES[step] & failed_steps
@@ -264,19 +294,29 @@ def _run(container: Container, job_id: JobId) -> None:
             cached = container.artifact_repository.get(key)
             if cached is not None:
                 _apply_cached(step, cached, video.id, state)
+                now = datetime.now(timezone.utc)
                 job = job.with_step_updated(
-                    step, status=StepStatus.SKIPPED_CACHED, findings=_findings_for(step, state)
+                    step,
+                    status=StepStatus.SKIPPED_CACHED,
+                    started_at=now,
+                    finished_at=now,
+                    findings=_findings_for(step, state),
                 )
                 container.job_repository.update(job)
                 continue
 
-            job = job.with_step_updated(step, status=StepStatus.RUNNING)
+            job = job.with_step_updated(step, status=StepStatus.RUNNING, started_at=datetime.now(timezone.utc))
             container.job_repository.update(job)
 
-            _compute(step, container, video, job_id, state)
+            _compute(step, container, video, job_id, state, configs)
 
             container.artifact_repository.put(key, _serialize(step, state))
-            job = job.with_step_updated(step, status=StepStatus.DONE, findings=_findings_for(step, state))
+            job = job.with_step_updated(
+                step,
+                status=StepStatus.DONE,
+                finished_at=datetime.now(timezone.utc),
+                findings=_findings_for(step, state),
+            )
             container.job_repository.update(job)
         except InvalidJobTransitionError:
             return
@@ -284,7 +324,11 @@ def _run(container: Container, job_id: JobId) -> None:
             failure = Failure(reason=str(exc))
             try:
                 job = job.with_step_updated(
-                    step, status=StepStatus.FAILED, error=failure.reason, retryable=failure.retryable
+                    step,
+                    status=StepStatus.FAILED,
+                    finished_at=datetime.now(timezone.utc),
+                    error=failure.reason,
+                    retryable=failure.retryable,
                 )
                 container.job_repository.update(job)
             except InvalidJobTransitionError:

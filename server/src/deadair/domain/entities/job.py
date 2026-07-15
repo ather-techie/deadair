@@ -62,9 +62,14 @@ class Job:
     steps: tuple[StepState, ...]
     created_at: datetime
     updated_at: datetime
+    speed_multiplier: float | None = None
 
     @staticmethod
-    def create(video_id: VideoId, steps: Sequence[PipelineStep] = tuple(PipelineStep)) -> "Job":
+    def create(
+        video_id: VideoId,
+        steps: Sequence[PipelineStep] = tuple(PipelineStep),
+        speed_multiplier: float | None = None,
+    ) -> "Job":
         now = datetime.now(timezone.utc)
         return Job(
             id=JobId.new(),
@@ -73,6 +78,7 @@ class Job:
             steps=tuple(StepState(step=s, status=StepStatus.PENDING) for s in steps),
             created_at=now,
             updated_at=now,
+            speed_multiplier=speed_multiplier,
         )
 
     def step_state(self, step: PipelineStep) -> StepState:

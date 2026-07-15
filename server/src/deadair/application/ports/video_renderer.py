@@ -10,7 +10,7 @@ class RenderError(Exception):
 
 
 class VideoRenderer(ABC):
-    """Cuts a source video down to an EDL's keep_ranges and re-encodes it."""
+    """Cuts a source video down to an EDL's segments and re-encodes it."""
 
     @abstractmethod
     def render(self, source_path: Path, edl: EDL, config: RenderConfig, output_path: Path) -> Path:
