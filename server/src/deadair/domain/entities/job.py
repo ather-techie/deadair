@@ -63,12 +63,24 @@ class Job:
     created_at: datetime
     updated_at: datetime
     speed_multiplier: float | None = None
+    noise_floor_db: float | None = None
+    min_silence_duration: float | None = None
+    padding_seconds: float | None = None
+    min_keep_duration: float | None = None
+    filler_words: frozenset[str] | None = None
+    filler_case_sensitive: bool | None = None
 
     @staticmethod
     def create(
         video_id: VideoId,
         steps: Sequence[PipelineStep] = tuple(PipelineStep),
         speed_multiplier: float | None = None,
+        noise_floor_db: float | None = None,
+        min_silence_duration: float | None = None,
+        padding_seconds: float | None = None,
+        min_keep_duration: float | None = None,
+        filler_words: frozenset[str] | None = None,
+        filler_case_sensitive: bool | None = None,
     ) -> "Job":
         now = datetime.now(timezone.utc)
         return Job(
@@ -79,6 +91,12 @@ class Job:
             created_at=now,
             updated_at=now,
             speed_multiplier=speed_multiplier,
+            noise_floor_db=noise_floor_db,
+            min_silence_duration=min_silence_duration,
+            padding_seconds=padding_seconds,
+            min_keep_duration=min_keep_duration,
+            filler_words=filler_words,
+            filler_case_sensitive=filler_case_sensitive,
         )
 
     def step_state(self, step: PipelineStep) -> StepState:

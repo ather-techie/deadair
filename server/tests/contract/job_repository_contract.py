@@ -29,6 +29,36 @@ class JobRepositoryContractTests:
         repo.add(job)
         assert repo.get(job.id).speed_multiplier == 4.0
 
+    def test_add_then_get_round_trips_tuning_params(self, repo):
+        job = Job.create(
+            VideoId.new(),
+            noise_floor_db=-40.0,
+            min_silence_duration=0.75,
+            padding_seconds=0.2,
+            min_keep_duration=0.4,
+            filler_words=frozenset({"um", "like"}),
+            filler_case_sensitive=True,
+        )
+        repo.add(job)
+        fetched = repo.get(job.id)
+        assert fetched.noise_floor_db == -40.0
+        assert fetched.min_silence_duration == 0.75
+        assert fetched.padding_seconds == 0.2
+        assert fetched.min_keep_duration == 0.4
+        assert fetched.filler_words == frozenset({"um", "like"})
+        assert fetched.filler_case_sensitive is True
+
+    def test_add_then_get_round_trips_unset_tuning_params_as_none(self, repo):
+        job = Job.create(VideoId.new())
+        repo.add(job)
+        fetched = repo.get(job.id)
+        assert fetched.noise_floor_db is None
+        assert fetched.min_silence_duration is None
+        assert fetched.padding_seconds is None
+        assert fetched.min_keep_duration is None
+        assert fetched.filler_words is None
+        assert fetched.filler_case_sensitive is None
+
     def test_get_missing_returns_none(self, repo):
         assert repo.get(Job.create(VideoId.new()).id) is None
 

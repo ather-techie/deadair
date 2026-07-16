@@ -20,7 +20,9 @@ from deadair.presentation.api.app import create_app
 
 @pytest.fixture
 def container(tmp_path, monkeypatch) -> Container:
-    settings = Settings(ffmpeg_binary_path=tmp_path / "ffmpeg", data_dir=tmp_path / "data")
+    # _env_file=None: isolate tests from whatever the developer's local,
+    # gitignored server/.env happens to contain.
+    settings = Settings(_env_file=None, ffmpeg_binary_path=tmp_path / "ffmpeg", data_dir=tmp_path / "data")
     fake_container = Container(
         settings=settings,
         job_repository=InMemoryJobRepository(),

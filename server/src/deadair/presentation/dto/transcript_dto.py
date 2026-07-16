@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -29,3 +31,21 @@ class ResultTranscriptSegmentDTO(BaseModel):
 class ResultTranscriptDTO(BaseModel):
     language: str
     segments: list[ResultTranscriptSegmentDTO]
+
+
+class HighlightedWordDTO(BaseModel):
+    text: str
+    start: float
+    end: float
+    status: Literal["kept", "sped_up", "removed"]
+
+
+class HighlightedSegmentDTO(BaseModel):
+    start: float
+    end: float
+    words: list[HighlightedWordDTO]
+
+
+class HighlightedTranscriptDTO(BaseModel):
+    language: str
+    segments: list[HighlightedSegmentDTO]

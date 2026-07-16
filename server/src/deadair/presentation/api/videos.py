@@ -9,16 +9,24 @@ from deadair.application.use_cases.run_pipeline_job import (
     render_output_path,
     run_pipeline_job,
 )
+from deadair.config import Settings
 from deadair.container import Container
 from deadair.domain.entities.job import Job, StepStatus
 from deadair.domain.entities.video import Video
 from deadair.domain.pipeline.step import PipelineStep
+from deadair.domain.policies.filler_policy import parse_filler_words
 from deadair.domain.value_objects.ids import VideoId
 from deadair.infrastructure.media.video_prober import probe_video
 from deadair.presentation.api.deps import get_container
-from deadair.presentation.dto.transcript_dto import PartialTranscriptDTO, ResultTranscriptDTO, TranscriptDTO
+from deadair.presentation.dto.transcript_dto import (
+    HighlightedTranscriptDTO,
+    PartialTranscriptDTO,
+    ResultTranscriptDTO,
+    TranscriptDTO,
+)
 from deadair.presentation.dto.video_dto import UploadResponseDTO, VideoDTO
 from deadair.presentation.mappers.transcript_mapper import (
+    build_highlighted_transcript,
     build_result_transcript,
     partial_transcript_to_dto,
     transcript_to_dto,
@@ -56,6 +64,39 @@ def _selected_steps(
 _ALLOWED_SPEED_MULTIPLIERS = (2.0, 4.0, 8.0)
 
 
+def _resolved_tuning_kwargs(
+    *,
+    noise_floor_db: float | None,
+    min_silence_duration: float | None,
+    padding_seconds: float | None,
+    min_keep_duration: float | None,
+    filler_words: str | None,
+    filler_case_sensitive: bool | None,
+    settings: Settings,
+) -> dict[str, object]:
+    """Resolves each tuning param as form value > Settings/env fallback > None
+    (None ultimately falls back further to the hardcoded dataclass default in
+    _step_configs_for). The resolved value is baked into the Job at creation
+    time, so it participates correctly in config-hash-based caching."""
+    parsed_filler_words = parse_filler_words(filler_words) if filler_words is not None else None
+    return {
+        "noise_floor_db": noise_floor_db if noise_floor_db is not None else settings.noise_floor_db,
+        "min_silence_duration": (
+            min_silence_duration if min_silence_duration is not None else settings.min_silence_duration
+        ),
+        "padding_seconds": padding_seconds if padding_seconds is not None else settings.padding_seconds,
+        "min_keep_duration": (
+            min_keep_duration if min_keep_duration is not None else settings.min_keep_duration
+        ),
+        "filler_words": (
+            parsed_filler_words if parsed_filler_words is not None else settings.resolved_filler_words()
+        ),
+        "filler_case_sensitive": (
+            filler_case_sensitive if filler_case_sensitive is not None else settings.filler_case_sensitive
+        ),
+    }
+
+
 @router.post("", status_code=201)
 async def upload_video(
     video: UploadFile = File(...),
@@ -65,6 +106,12 @@ async def upload_video(
     show_result_transcript: bool = Form(False),
     speed_up_cuts: bool = Form(False),
     speed_multiplier: float = Form(2.0),
+    noise_floor_db: float | None = Form(None),
+    min_silence_duration: float | None = Form(None),
+    padding_seconds: float | None = Form(None),
+    min_keep_duration: float | None = Form(None),
+    filler_words: str | None = Form(None),
+    filler_case_sensitive: bool | None = Form(None),
     container: Container = Depends(get_container),
 ) -> UploadResponseDTO:
     if not (remove_silence or remove_filler or show_original_transcript or show_result_transcript):
@@ -85,6 +132,23 @@ async def upload_video(
             status_code=400,
             detail=f"speed_multiplier must be one of {_ALLOWED_SPEED_MULTIPLIERS}",
         )
+    for name, value in (
+        ("min_silence_duration", min_silence_duration),
+        ("padding_seconds", padding_seconds),
+        ("min_keep_duration", min_keep_duration),
+    ):
+        if value is not None and value < 0:
+            raise HTTPException(status_code=400, detail=f"{name} must be >= 0")
+
+    tuning_kwargs = _resolved_tuning_kwargs(
+        noise_floor_db=noise_floor_db,
+        min_silence_duration=min_silence_duration,
+        padding_seconds=padding_seconds,
+        min_keep_duration=min_keep_duration,
+        filler_words=filler_words,
+        filler_case_sensitive=filler_case_sensitive,
+        settings=container.settings,
+    )
 
     video_id = VideoId.new()
     upload_dir = container.settings.resolved_uploads_dir() / video_id.value
@@ -119,6 +183,7 @@ async def upload_video(
             show_result_transcript=show_result_transcript,
         ),
         speed_multiplier=speed_multiplier if speed_up_cuts else None,
+        **tuning_kwargs,
     )
     container.job_repository.add(job)
     container.job_runner.enqueue(run_pipeline_job, str(job.id))
@@ -195,6 +260,28 @@ def get_video_result_transcript(video_id: str, container: Container = Depends(ge
     if edl is None:
         raise HTTPException(status_code=409, detail="edl not built yet")
     return build_result_transcript(transcript, edl)
+
+
+@router.get("/{video_id}/transcript/highlighted")
+def get_video_highlighted_transcript(
+    video_id: str, container: Container = Depends(get_container)
+) -> HighlightedTranscriptDTO:
+    vid = VideoId(video_id)
+    if container.video_repository.get(vid) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+
+    jobs = container.job_repository.list_for_video(vid)
+    if not jobs:
+        raise HTTPException(status_code=404, detail="no job for this video")
+    latest_job = jobs[-1]
+
+    transcript = get_transcript(container, vid, latest_job)
+    if transcript is None:
+        raise HTTPException(status_code=409, detail="transcript not requested or not ready yet")
+    edl = get_edl(container, vid, latest_job)
+    if edl is None:
+        raise HTTPException(status_code=409, detail="edl not built yet")
+    return build_highlighted_transcript(transcript, edl)
 
 
 @router.get("/{video_id}/transcript/partial")

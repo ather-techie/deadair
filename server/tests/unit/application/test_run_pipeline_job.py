@@ -1,11 +1,12 @@
 from deadair.application.ports.audio_extractor import AudioExtractionError
 from deadair.application.ports.transcriber import TranscriptionError
-from deadair.application.use_cases.run_pipeline_job import _run
+from deadair.application.use_cases.run_pipeline_job import _run, _step_configs_for
 from deadair.config import Settings
 from deadair.container import Container
 from deadair.domain.entities.job import Job, JobStatus, StepStatus
 from deadair.domain.entities.video import Video
 from deadair.domain.pipeline.step import PipelineStep
+from deadair.domain.policies.filler_policy import DEFAULT_FILLER_WORDS
 from deadair.domain.value_objects.ids import VideoId
 from deadair.infrastructure.jobs.in_memory_job_runner import InMemoryJobRunner
 from deadair.infrastructure.media.fake_audio_extractor import FakeAudioExtractor
@@ -41,7 +42,9 @@ class _RaisingTranscriber:
 
 
 def _make_container(tmp_path, **overrides) -> Container:
-    settings = Settings(ffmpeg_binary_path=tmp_path / "ffmpeg", data_dir=tmp_path / "data")
+    # _env_file=None: isolate tests from whatever the developer's local,
+    # gitignored server/.env happens to contain.
+    settings = Settings(_env_file=None, ffmpeg_binary_path=tmp_path / "ffmpeg", data_dir=tmp_path / "data")
     defaults = dict(
         settings=settings,
         job_repository=InMemoryJobRepository(),
@@ -218,3 +221,48 @@ def test_transcribe_failure_cascades_to_render_when_filler_removal_selected(tmp_
     assert final.step_state(PipelineStep.RENDER).status == StepStatus.FAILED
     # DETECT_SILENCE is independent of TRANSCRIBE, so it still completes
     assert final.step_state(PipelineStep.DETECT_SILENCE).status == StepStatus.DONE
+
+
+def test_step_configs_for_all_none_job_matches_hardcoded_defaults():
+    job = Job.create(VideoId.new())
+    configs = _step_configs_for(job)
+
+    silence = configs[PipelineStep.DETECT_SILENCE]
+    assert silence.noise_floor_db == -35.0
+    assert silence.min_silence_duration == 0.5
+
+    filler = configs[PipelineStep.DETECT_FILLER]
+    assert filler.words == DEFAULT_FILLER_WORDS
+    assert filler.case_sensitive is False
+
+    edl = configs[PipelineStep.BUILD_EDL]
+    assert edl.padding_seconds == 0.15
+    assert edl.min_keep_duration == 0.3
+    assert edl.speed_multiplier is None
+
+
+def test_step_configs_for_job_with_tuning_params_overrides_defaults():
+    job = Job.create(
+        VideoId.new(),
+        speed_multiplier=4.0,
+        noise_floor_db=-40.0,
+        min_silence_duration=0.75,
+        padding_seconds=0.2,
+        min_keep_duration=0.4,
+        filler_words=frozenset({"um", "like"}),
+        filler_case_sensitive=True,
+    )
+    configs = _step_configs_for(job)
+
+    silence = configs[PipelineStep.DETECT_SILENCE]
+    assert silence.noise_floor_db == -40.0
+    assert silence.min_silence_duration == 0.75
+
+    filler = configs[PipelineStep.DETECT_FILLER]
+    assert filler.words == frozenset({"um", "like"})
+    assert filler.case_sensitive is True
+
+    edl = configs[PipelineStep.BUILD_EDL]
+    assert edl.padding_seconds == 0.2
+    assert edl.min_keep_duration == 0.4
+    assert edl.speed_multiplier == 4.0

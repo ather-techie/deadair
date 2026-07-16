@@ -95,3 +95,31 @@ def test_with_step_updated_carries_findings():
         PipelineStep.DETECT_SILENCE, status=StepStatus.DONE, findings={"cuts": 3, "seconds_removed": 4.5}
     )
     assert job.step_state(PipelineStep.DETECT_SILENCE).findings == {"cuts": 3, "seconds_removed": 4.5}
+
+
+def test_tuning_params_default_to_none():
+    job = _all_pending_job()
+    assert job.noise_floor_db is None
+    assert job.min_silence_duration is None
+    assert job.padding_seconds is None
+    assert job.min_keep_duration is None
+    assert job.filler_words is None
+    assert job.filler_case_sensitive is None
+
+
+def test_create_passes_through_tuning_params():
+    job = Job.create(
+        VideoId.new(),
+        noise_floor_db=-40.0,
+        min_silence_duration=0.75,
+        padding_seconds=0.2,
+        min_keep_duration=0.4,
+        filler_words=frozenset({"um", "like"}),
+        filler_case_sensitive=True,
+    )
+    assert job.noise_floor_db == -40.0
+    assert job.min_silence_duration == 0.75
+    assert job.padding_seconds == 0.2
+    assert job.min_keep_duration == 0.4
+    assert job.filler_words == frozenset({"um", "like"})
+    assert job.filler_case_sensitive is True

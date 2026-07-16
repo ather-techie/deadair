@@ -11,6 +11,11 @@ class ExtractAudioConfig:
 class TranscribeConfig:
     model_name: str = "base"
     language: str | None = None
+    condition_on_previous_text: bool = False
+    vad_filter: bool = False
+    initial_prompt: str | None = (
+        "Um, uh, like, you know, this transcript includes all filler words verbatim."
+    )
 
 
 @dataclass(frozen=True, slots=True)

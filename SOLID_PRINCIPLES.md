@@ -16,9 +16,13 @@ owned in one place.
 
 **In this repo:** [`domain/entities/job.py`](server/src/deadair/domain/entities/job.py) —
 `Job` is the single place that computes aggregate `JobStatus` from per-step `StepStatus`es
-(`_derive_status`, line 44) and enforces transition legality (`with_step_updated`, line 79;
-`cancel`, line 113 — both raise `InvalidJobTransitionError` once the job is terminal). No
-other layer re-derives or overrides job status.
+(`_derive_status`, line 47) and enforces transition legality (`with_step_updated`, line 105;
+`cancel`, line 139 — both raise `InvalidJobTransitionError` once the job is terminal). No
+other layer re-derives or overrides job status. `Job`'s per-job pipeline-tuning fields
+(`noise_floor_db`, `min_silence_duration`, `padding_seconds`, `min_keep_duration`,
+`filler_words`, `filler_case_sensitive` — all `None` by default) are plain data threaded
+through by `_step_configs_for` in `run_pipeline_job.py`; `Job` itself has no opinion on their
+meaning, keeping this single responsibility intact.
 
 **Do:** keep status-derivation and transition-validity logic inside `Job`.
 **Don't:** let API/DTO/mapper code compute or infer job/step status independently — call
@@ -68,13 +72,14 @@ guarantees) — that difference belongs in the contract test, and every adapter 
 **Definition:** prefer several small, client-specific interfaces over one broad, general
 one — no client should depend on methods it doesn't use.
 
-**In this repo:** [`application/ports/`](server/src/deadair/application/ports/) defines nine
+**In this repo:** [`application/ports/`](server/src/deadair/application/ports/) defines ten
 narrow, single-purpose ABCs, each with 1-4 focused methods: `AudioExtractor.extract`,
 `Transcriber.transcribe`, `SilenceDetector.detect_candidate_gaps`, `VideoRenderer.render`,
 `JobRunner.enqueue`/`cancel`, `ProgressReporter.report`/`get`, `ArtifactRepository.get`/
-`put`/`exists`/`invalidate_video`, `JobRepository`'s CRUD-style methods, and
-`VideoRepository`'s. Each also raises its own domain-specific errors rather than leaking
-storage/adapter-specific exceptions.
+`put`/`exists`/`invalidate_video`, `TranscriptSegmentSink.append`/`list_after` (incremental
+mid-transcription segments, distinct from `ArtifactRepository`'s whole-`Transcript` caching),
+`JobRepository`'s CRUD-style methods, and `VideoRepository`'s. Each also raises its own
+domain-specific errors rather than leaking storage/adapter-specific exceptions.
 
 **Do:** add a new, narrow port when a use case needs a new capability.
 **Don't:** bundle unrelated capabilities into one broad interface (e.g. a single
@@ -87,12 +92,13 @@ adapters and callers to depend on methods they don't need.
 concrete implementations should be wired in from the outside.
 
 **In this repo:** [`container.py`](server/src/deadair/container.py) is the single
-composition root — `Container` (line 27) is typed entirely in terms of port ABCs, and
-`build_container()` (line 45) is the *only* place concrete infrastructure classes
+composition root — `Container` (line 30) is typed entirely in terms of port ABCs, and
+`build_container()` (line 48) is the *only* place concrete infrastructure classes
 (`SqliteJobRepository`, `FfmpegAudioExtractor`, `FasterWhisperTranscriber`, `RQJobRunner`,
-...) are imported and instantiated. `run_pipeline_job.py`'s orchestrator calls only
-`container.audio_extractor.extract(...)`, `container.transcriber.transcribe(...)`, etc. —
-never imports an infrastructure module directly.
+`SqliteTranscriptSegmentSink`, ...) are imported and instantiated. `run_pipeline_job.py`'s
+orchestrator calls only `container.audio_extractor.extract(...)`,
+`container.transcriber.transcribe(...)`, etc. — never imports an infrastructure module
+directly.
 
 **Do:** wire new adapters exclusively inside `build_container()`.
 **Don't:** import anything from `infrastructure/` inside `domain/`, `application/`, or

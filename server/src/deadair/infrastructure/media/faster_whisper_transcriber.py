@@ -37,7 +37,12 @@ class FasterWhisperTranscriber(Transcriber):
         try:
             model = self._get_model(config.model_name)
             segments_iter, info = model.transcribe(
-                str(audio_path), language=config.language, word_timestamps=True
+                str(audio_path),
+                language=config.language,
+                word_timestamps=True,
+                condition_on_previous_text=config.condition_on_previous_text,
+                vad_filter=config.vad_filter,
+                initial_prompt=config.initial_prompt,
             )
             total_duration = info.duration or 0.0
             segments = []

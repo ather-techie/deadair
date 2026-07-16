@@ -5,7 +5,13 @@ CREATE TABLE IF NOT EXISTS jobs (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     steps_json TEXT NOT NULL,
-    speed_multiplier REAL
+    speed_multiplier REAL,
+    noise_floor_db REAL,
+    min_silence_duration REAL,
+    padding_seconds REAL,
+    min_keep_duration REAL,
+    filler_words_json TEXT,
+    filler_case_sensitive INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_video_id ON jobs(video_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);

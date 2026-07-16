@@ -52,6 +52,7 @@ let pollFailures = 0;
 let wantOriginalTranscript = false;
 let wantResultTranscript = false;
 let resultTranscriptFetched = false;
+let highlightedTranscriptFetched = false;
 
 let transcriptPollTimeout = null;
 let transcriptPollFailures = 0;
@@ -106,6 +107,7 @@ form.addEventListener("submit", async (event) => {
   wantOriginalTranscript = showOriginalTranscript;
   wantResultTranscript = showResultTranscript;
   resultTranscriptFetched = false;
+  highlightedTranscriptFetched = false;
   stopPolling();
   stopTranscriptPolling();
   progressList.innerHTML = "";
@@ -169,6 +171,7 @@ resetBtn.addEventListener("click", () => {
   wantOriginalTranscript = false;
   wantResultTranscript = false;
   resultTranscriptFetched = false;
+  highlightedTranscriptFetched = false;
 
   form.reset();
   optionsError.hidden = true;
@@ -200,6 +203,7 @@ function pollJob(videoId, jobId) {
       // render that finishes before some other step fails still shows up.
       maybeShowResult(videoId, job);
       maybeShowResultTranscript(videoId, job);
+      maybeShowHighlightedTranscript(videoId, job);
 
       if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
         finishPolling();
@@ -254,6 +258,30 @@ function maybeShowResultTranscript(videoId, job) {
     .catch((err) => {
       console.error("Result transcript fetch failed:", err);
       resultTranscriptFetched = false;
+    });
+}
+
+// Like the result transcript, the removed/sped-up/kept tagging needs the
+// finished EDL, so it's fetched once and replaces the incrementally-streamed
+// original transcript panel with a word-highlighted version.
+function maybeShowHighlightedTranscript(videoId, job) {
+  if (!wantOriginalTranscript || highlightedTranscriptFetched) return;
+  const buildEdlStep = job.steps.find((s) => s.step === "build_edl");
+  if (!buildEdlStep || !(buildEdlStep.status === "done" || buildEdlStep.status === "skipped_cached")) return;
+
+  highlightedTranscriptFetched = true;
+  fetch(`/api/videos/${videoId}/transcript/highlighted`)
+    .then((response) => {
+      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      return response.json();
+    })
+    .then((data) => {
+      originalTranscriptContentDiv.hidden = false;
+      renderHighlightedTranscript(data.segments);
+    })
+    .catch((err) => {
+      console.error("Highlighted transcript fetch failed:", err);
+      highlightedTranscriptFetched = false;
     });
 }
 
@@ -453,6 +481,33 @@ function renderResultTranscript(segments) {
     p.appendChild(text);
 
     resultTranscriptDiv.appendChild(p);
+  }
+}
+
+function renderHighlightedTranscript(segments) {
+  originalTranscriptDiv.innerHTML = "";
+  for (const segment of segments) {
+    const p = document.createElement("p");
+    p.className = "transcript-segment";
+
+    const timestamp = document.createElement("span");
+    timestamp.className = "transcript-timestamp";
+    timestamp.textContent = formatTimestamp(segment.start);
+    p.appendChild(timestamp);
+
+    const text = document.createElement("span");
+    text.className = "transcript-text";
+    segment.words.forEach((word, index) => {
+      const wordSpan = document.createElement("span");
+      wordSpan.className = "word";
+      if (word.status !== "kept") wordSpan.classList.add(`word-${word.status.replace("_", "-")}`);
+      wordSpan.textContent = word.text;
+      text.appendChild(wordSpan);
+      if (index < segment.words.length - 1) text.appendChild(document.createTextNode(" "));
+    });
+    p.appendChild(text);
+
+    originalTranscriptDiv.appendChild(p);
   }
 }
 

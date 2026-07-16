@@ -3,6 +3,8 @@ from pathlib import Path
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from deadair.domain.policies.filler_policy import parse_filler_words
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DEADAIR_", env_file=".env", extra="forbid")
@@ -26,6 +28,18 @@ class Settings(BaseSettings):
     whisper_compute_type: str = "int8"
     redis_url: str = "redis://localhost:6379/0"
     rq_queue_name: str = "deadair"
+    # Org-wide fallback defaults for per-job pipeline tuning params (see
+    # domain/policies/silence_policy.py, domain/edl_builder.py,
+    # domain/policies/filler_policy.py). A job's upload form field always
+    # takes precedence; these only apply when the form omits the field. None
+    # (the default) means "use the hardcoded dataclass default" -- i.e. no
+    # behavior change unless explicitly set.
+    noise_floor_db: float | None = None
+    min_silence_duration: float | None = None
+    padding_seconds: float | None = None
+    min_keep_duration: float | None = None
+    filler_words: str | None = None  # comma-separated
+    filler_case_sensitive: bool | None = None
 
     @field_validator("ffmpeg_binary_path")
     @classmethod
@@ -33,6 +47,16 @@ class Settings(BaseSettings):
         if not str(v).strip():
             raise ValueError("ffmpeg_binary_path must not be empty")
         return v
+
+    @field_validator("min_silence_duration", "padding_seconds", "min_keep_duration")
+    @classmethod
+    def _non_negative(cls, v: float | None) -> float | None:
+        if v is not None and v < 0:
+            raise ValueError("must be >= 0")
+        return v
+
+    def resolved_filler_words(self) -> frozenset[str] | None:
+        return parse_filler_words(self.filler_words) if self.filler_words is not None else None
 
     def resolved_sqlite_db_path(self) -> Path:
         return (self.sqlite_db_path or (self.data_dir / "deadair.db")).resolve()

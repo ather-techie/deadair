@@ -46,6 +46,8 @@ def _json_to_steps(raw: str) -> tuple[StepState, ...]:
 
 
 def _row_to_job(row: sqlite3.Row) -> Job:
+    filler_words = json.loads(row["filler_words_json"]) if row["filler_words_json"] is not None else None
+    filler_case_sensitive = row["filler_case_sensitive"]
     return Job(
         id=JobId(row["id"]),
         video_id=VideoId(row["video_id"]),
@@ -54,6 +56,12 @@ def _row_to_job(row: sqlite3.Row) -> Job:
         created_at=datetime.fromisoformat(row["created_at"]),
         updated_at=datetime.fromisoformat(row["updated_at"]),
         speed_multiplier=row["speed_multiplier"],
+        noise_floor_db=row["noise_floor_db"],
+        min_silence_duration=row["min_silence_duration"],
+        padding_seconds=row["padding_seconds"],
+        min_keep_duration=row["min_keep_duration"],
+        filler_words=frozenset(filler_words) if filler_words is not None else None,
+        filler_case_sensitive=bool(filler_case_sensitive) if filler_case_sensitive is not None else None,
     )
 
 
@@ -64,8 +72,10 @@ class SqliteJobRepository(JobRepository):
     def add(self, job: Job) -> None:
         try:
             self._conn.execute(
-                "INSERT INTO jobs (id, video_id, status, created_at, updated_at, steps_json, speed_multiplier) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO jobs (id, video_id, status, created_at, updated_at, steps_json, "
+                "speed_multiplier, noise_floor_db, min_silence_duration, padding_seconds, "
+                "min_keep_duration, filler_words_json, filler_case_sensitive) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     job.id.value,
                     job.video_id.value,
@@ -74,6 +84,12 @@ class SqliteJobRepository(JobRepository):
                     job.updated_at.isoformat(),
                     _steps_to_json(job.steps),
                     job.speed_multiplier,
+                    job.noise_floor_db,
+                    job.min_silence_duration,
+                    job.padding_seconds,
+                    job.min_keep_duration,
+                    json.dumps(sorted(job.filler_words)) if job.filler_words is not None else None,
+                    job.filler_case_sensitive,
                 ),
             )
             self._conn.commit()

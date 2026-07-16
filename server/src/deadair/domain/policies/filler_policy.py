@@ -6,7 +6,8 @@ from deadair.domain.entities.transcript import Word
 from deadair.domain.value_objects.time_range import TimeRange
 
 DEFAULT_FILLER_WORDS: frozenset[str] = frozenset(
-    {"um", "uh", "uhh", "umm", "like", "you know", "actually", "basically", "so"}
+    {"um", "uh", "uhh", "umm", "hm", "hmm", "like", "actually",
+     "basically", "so", "literally", "right", "okay", "well"}
 )
 
 
@@ -14,6 +15,10 @@ DEFAULT_FILLER_WORDS: frozenset[str] = frozenset(
 class FillerWordConfig:
     words: frozenset[str] = DEFAULT_FILLER_WORDS
     case_sensitive: bool = False
+
+
+def parse_filler_words(raw: str) -> frozenset[str]:
+    return frozenset(w.strip() for w in raw.split(",") if w.strip())
 
 
 def is_filler_word(word: Word, config: FillerWordConfig) -> bool:

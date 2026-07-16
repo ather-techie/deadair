@@ -30,12 +30,30 @@ from deadair.domain.value_objects.time_range import TimeRange
 
 
 def _step_configs_for(job: Job) -> dict[PipelineStep, object]:
+    silence_kwargs = {}
+    if job.noise_floor_db is not None:
+        silence_kwargs["noise_floor_db"] = job.noise_floor_db
+    if job.min_silence_duration is not None:
+        silence_kwargs["min_silence_duration"] = job.min_silence_duration
+
+    filler_kwargs = {}
+    if job.filler_words is not None:
+        filler_kwargs["words"] = job.filler_words
+    if job.filler_case_sensitive is not None:
+        filler_kwargs["case_sensitive"] = job.filler_case_sensitive
+
+    edl_kwargs = {"speed_multiplier": job.speed_multiplier}
+    if job.padding_seconds is not None:
+        edl_kwargs["padding_seconds"] = job.padding_seconds
+    if job.min_keep_duration is not None:
+        edl_kwargs["min_keep_duration"] = job.min_keep_duration
+
     return {
         PipelineStep.EXTRACT_AUDIO: ExtractAudioConfig(),
         PipelineStep.TRANSCRIBE: TranscribeConfig(),
-        PipelineStep.DETECT_SILENCE: SilenceDetectionConfig(),
-        PipelineStep.DETECT_FILLER: FillerWordConfig(),
-        PipelineStep.BUILD_EDL: BuildEdlConfig(speed_multiplier=job.speed_multiplier),
+        PipelineStep.DETECT_SILENCE: SilenceDetectionConfig(**silence_kwargs),
+        PipelineStep.DETECT_FILLER: FillerWordConfig(**filler_kwargs),
+        PipelineStep.BUILD_EDL: BuildEdlConfig(**edl_kwargs),
         PipelineStep.RENDER: RenderConfig(),
     }
 

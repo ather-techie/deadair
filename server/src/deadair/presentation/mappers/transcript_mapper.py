@@ -1,8 +1,11 @@
 from deadair.domain.edl_builder import map_to_result_time
-from deadair.domain.entities.edl import EDL
-from deadair.domain.entities.transcript import Segment, Transcript
+from deadair.domain.entities.edl import EDL, EdlSegment
+from deadair.domain.entities.transcript import Segment, Transcript, Word
 from deadair.domain.value_objects.time_range import TimeRange
 from deadair.presentation.dto.transcript_dto import (
+    HighlightedSegmentDTO,
+    HighlightedTranscriptDTO,
+    HighlightedWordDTO,
     PartialTranscriptDTO,
     ResultTranscriptDTO,
     ResultTranscriptSegmentDTO,
@@ -55,3 +58,32 @@ def build_result_transcript(transcript: Transcript, edl: EDL) -> ResultTranscrip
             )
         )
     return ResultTranscriptDTO(language=transcript.language, segments=segments)
+
+
+def _word_status(word: Word, edl_segments: list[EdlSegment]) -> str:
+    overlapping = [s for s in edl_segments if TimeRange(word.start, word.end).overlaps(s.range)]
+    if not overlapping:
+        return "removed"
+    if any(s.rate == 1.0 for s in overlapping):
+        return "kept"
+    return "sped_up"
+
+
+def build_highlighted_transcript(transcript: Transcript, edl: EDL) -> HighlightedTranscriptDTO:
+    """Tags every original word as kept/sped_up/removed by overlapping its timestamp
+    against the EDL's segments, without dropping or remapping anything -- this stays
+    on the original timeline for inline highlighting of the original transcript."""
+    segments = [
+        HighlightedSegmentDTO(
+            start=seg.start,
+            end=seg.end,
+            words=[
+                HighlightedWordDTO(
+                    text=w.text, start=w.start, end=w.end, status=_word_status(w, list(edl.segments))
+                )
+                for w in seg.words
+            ],
+        )
+        for seg in transcript.segments
+    ]
+    return HighlightedTranscriptDTO(language=transcript.language, segments=segments)
