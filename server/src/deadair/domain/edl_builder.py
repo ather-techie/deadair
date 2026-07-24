@@ -30,12 +30,12 @@ def merge_overlapping(ranges: Sequence[TimeRange]) -> list[TimeRange]:
     return merged
 
 
-def _pad_cut(c: TimeRange, padding: float) -> TimeRange | None:
+def _pad_cut(c: TimeRange, padding: float) -> TimeRange:
     """Shrink a cut range inward by `padding` on each side so we don't clip
-    speech right at the boundary. If the range is too short to survive
-    padding, it's not a cut at all (returns None -> fully kept)."""
+    speech right at the boundary. If the range is too short to survive full
+    padding, cut it as-is rather than dropping the cut entirely."""
     new_start, new_end = c.start + padding, c.end - padding
-    return TimeRange(new_start, new_end) if new_end > new_start else None
+    return TimeRange(new_start, new_end) if new_end > new_start else c
 
 
 def build_edl(
@@ -48,7 +48,8 @@ def build_edl(
     """
     1. Union silence + filler candidate cut ranges, merging overlaps.
     2. Pad (shrink) each merged cut inward so a buffer of speech survives at
-       each edge.
+       each edge; a cut too short to fully absorb the padding is cut as-is
+       instead of being dropped.
     3. Derive keep ranges as the complement of the padded cuts over
        [0, video_duration].
     4. Drop any keep range shorter than min_keep_duration — dropping it (not
@@ -64,7 +65,7 @@ def build_edl(
        property by construction.
     """
     merged_cuts = merge_overlapping(list(silence_cut_ranges) + list(filler_cut_ranges))
-    padded_cuts = [pc for c in merged_cuts if (pc := _pad_cut(c, config.padding_seconds)) is not None]
+    padded_cuts = [_pad_cut(c, config.padding_seconds) for c in merged_cuts]
     keep = complement(padded_cuts, video_duration)
     keep = [k for k in keep if k.duration >= config.min_keep_duration]
 

@@ -28,6 +28,41 @@ def test_single_silence_gap_with_padding_removed():
     assert edl.segments == _kept(TimeRange(0, 4.5), TimeRange(5.5, 10))
 
 
+def test_short_filler_cut_shorter_than_padding_still_gets_cut():
+    edl = build_edl(
+        VideoId.new(),
+        video_duration=10.0,
+        silence_cut_ranges=[],
+        filler_cut_ranges=[TimeRange(4.0, 4.2)],  # 0.2s, shorter than 2*0.15 padding
+        config=BuildEdlConfig(padding_seconds=0.15, min_keep_duration=0.0),
+    )
+    assert edl.segments == _kept(TimeRange(0, 4.0), TimeRange(4.2, 10))
+
+
+def test_cut_exactly_as_long_as_padding_still_gets_cut():
+    edl = build_edl(
+        VideoId.new(),
+        video_duration=10.0,
+        silence_cut_ranges=[],
+        filler_cut_ranges=[TimeRange(4.0, 4.3)],  # 0.3s == 2*0.15 padding exactly
+        config=BuildEdlConfig(padding_seconds=0.15, min_keep_duration=0.0),
+    )
+    assert edl.segments == _kept(TimeRange(0, 4.0), TimeRange(4.3, 10))
+
+
+def test_short_fallback_cut_leaves_tiny_sliver_dropped_by_min_keep_duration():
+    edl = build_edl(
+        VideoId.new(),
+        video_duration=10.0,
+        silence_cut_ranges=[],
+        # two short filler cuts, 0.2s apart -- the sliver between them survives
+        # padding-shrinkage of the *other* cuts but is itself too short to keep
+        filler_cut_ranges=[TimeRange(4.0, 4.2), TimeRange(4.4, 4.6)],
+        config=BuildEdlConfig(padding_seconds=0.15, min_keep_duration=0.5),
+    )
+    assert edl.segments == _kept(TimeRange(0, 4.0), TimeRange(4.6, 10))
+
+
 def test_overlapping_silence_and_filler_merge_into_one_cut():
     edl = build_edl(
         VideoId.new(),
